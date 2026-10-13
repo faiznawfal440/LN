@@ -1,25 +1,22 @@
 # Lumen — AI Light Novel Reader (LN)
 
-Responsive light-novel reading platform based on the LN product requirements.
+Responsive light-novel reading platform based on the supplied product requirements.
 
 ## Stack
-
 - React 19 + TypeScript + Vite
 - Supabase Auth, PostgreSQL, private object storage and Edge Functions
-- OpenAI API for PDF text extraction, metadata, chapter detection, summaries and embeddings
-- GitHub Actions for type-checking and production builds; Vercel for web hosting
+- OpenAI API for PDF extraction, metadata, chapter detection, summaries, glossary and embeddings
+- GitHub Actions for production builds; Vercel for web hosting
 
 ## Setup
-
 1. Copy `.env.example` to `.env.local`.
 2. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from the Supabase project settings.
 3. Run `npm install`, then `npm run dev`.
 4. Apply the SQL migration in `supabase/migrations` and deploy the functions in `supabase/functions`.
-5. Configure Supabase Auth URL settings: set the production Site URL to the deployed HTTPS domain and add exact production, preview and local redirect URLs. Do not use localhost as the production Site URL.
-6. Set `OPENAI_API_KEY` as a Supabase Edge Function secret; never put it in a `VITE_*` variable or commit it.
+5. In Supabase Auth → URL Configuration, set the Site URL to your deployed HTTPS domain. Add the production URL, your Vercel preview URL patterns, and `http://localhost:8443/**` to Redirect URLs.
+6. Set `OPENAI_API_KEY` as a Supabase Edge Function secret. Never put it in a `VITE_*` variable or commit it.
 
-## Supabase
-
+## Database and functions
 ```bash
 supabase link --project-ref <project-ref>
 supabase db push
@@ -27,16 +24,14 @@ supabase secrets set OPENAI_API_KEY=<your-key>
 supabase functions deploy
 ```
 
-Promote the first editor/admin account by inserting a row into `private.user_roles` for that authenticated user's UUID. New accounts are readers by default.
+New accounts are readers by default. Promote the initial editor/admin by inserting the authenticated user's UUID into `private.user_roles` in the Supabase SQL editor.
 
-## Product scope
+## Product coverage
+Responsive discovery, reader workspace, cloud reading progress/bookmarks, community discussions, PDF upload, AI processing stages, metadata and chapter review, explicit publishing, semantic search, personal shelf, series/volume ratings, spoiler flags, safe volume recaps, notifications, permission/attribution records and takedown tracking.
 
-The web baseline includes responsive discovery, search, a dedicated reading workspace, personal progress/bookmarks, community discussion and an admin AI Studio with upload → processing → review → explicit publish. The schema also supports shelves, double ratings with verified-reader state, spoiler-marked discussion, safe volume recaps, release notifications, embedding search and permission/takedown records.
+Every published translation must have a recorded, approved permission and attribution record. Permission from a translator does not replace rights in the original work; verify distribution rights and define takedown handling before public launch.
 
-PDF processing uses a review gate; AI results must not be auto-published. Every distributed translation must have documented permission and attribution. Permission from a translator does not replace rights in the original work; verify legal rights before public launch.
-
-## Security notes
-
-- Only the Supabase publishable key is used by the browser. Keep service/secret keys and the OpenAI key server-side.
-- PDF files remain in a private Storage bucket and the app issues short-lived signed URLs.
-- Public tables have row-level security; roles are read from the server-managed `private.user_roles`, never from editable user metadata.
+## Security
+- Browser code uses only the Supabase publishable key. Keep service/secret keys and the OpenAI key server-side.
+- Original PDFs stay in the private `novel-pdfs` bucket and are delivered with short-lived signed URLs.
+- Public tables have row-level security. Authorization uses `private.user_roles`, not editable user metadata.

@@ -1,0 +1,25 @@
+project_id = "lumen"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[functions.create-novel]
+verify_jwt = true
+
+[functions.get-my-role]
+verify_jwt = true
+
+[functions.get-volume-pdf-url]
+verify_jwt = true
+
+[functions.process-volume]
+verify_jwt = true
+
+[functions.publish-volume]
+verify_jwt = true
+
+[functions.semantic-search]
+verify_jwt = true
