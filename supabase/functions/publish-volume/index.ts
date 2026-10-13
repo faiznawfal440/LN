@@ -10,9 +10,10 @@ Deno.serve(withSupabase({auth:"user"},async(req,ctx)=>{
   const {data:volume,error:volumeError}=await ctx.supabaseAdmin.from("volumes").select("id,novel_id,volume_number,title,page_count,publication_status").eq("id",volumeId).maybeSingle();
   if(volumeError) throw volumeError; if(!volume) return Response.json({error:"Volume not found."},{status:404,headers:corsHeaders});
   if(volume.publication_status!=="review") return Response.json({error:"Only a volume awaiting human review can be published."},{status:409,headers:corsHeaders});
-  const {data:permission,error:permissionError}=await ctx.supabaseAdmin.from("volume_permissions").select("permission_status,attribution_text,translator_name,permission_scope,consent_reference").eq("volume_id",volumeId).maybeSingle();
+  const {data:permission,error:permissionError}=await ctx.supabaseAdmin.from("volume_permissions").select("permission_status,attribution_text,translator_name,permission_scope,consent_reference,original_rights_holder,original_rights_scope,original_rights_reference,original_rights_status").eq("volume_id",volumeId).maybeSingle();
   if(permissionError) throw permissionError;
   if(!permission||permission.permission_status!=="approved"||!permission.attribution_text?.trim()||!permission.translator_name?.trim()||!permission.permission_scope?.trim()||!permission.consent_reference?.trim()) return Response.json({error:"Publishing is blocked until translator permission is approved and attribution is complete."},{status:422,headers:corsHeaders});
+  if(permission.original_rights_status!=="approved"||!permission.original_rights_holder?.trim()||!permission.original_rights_scope?.trim()||!permission.original_rights_reference?.trim()) return Response.json({error:"Publishing is blocked until the original-work distribution rights have been verified and documented separately."},{status:422,headers:corsHeaders});
   const {data:chapters,error:chapterError}=await ctx.supabaseAdmin.from("chapters").select("id").eq("volume_id",volumeId).order("chapter_number");
   if(chapterError) throw chapterError; if(!chapters?.length) return Response.json({error:"Cannot publish without chapters."},{status:422,headers:corsHeaders});
   const {data:pages}=await ctx.supabaseAdmin.from("chapter_pages").select("id").in("chapter_id",chapters.map((c)=>c.id)).limit(1);

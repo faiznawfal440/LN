@@ -421,3 +421,7 @@ kbd { border:1px solid var(--line); padding:3px 6px; border-radius:5px; backgrou
 .notification-empty p { margin:0 0 6px; font-size:11px; }
 .notification-empty small { color:var(--muted,#77717f); font-size:9px; }
 .notification-notice { margin:0; padding:10px 15px; font-size:9px; color:#9b4b4b; }
+
+.rights-review-divider { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:18px; margin-top:6px; border-top:1px solid var(--line,#e8e5ed); }
+.rights-review-divider span { font-size:9px; font-weight:800; letter-spacing:.1em; }
+.rights-review-divider small { font-size:8px; color:var(--muted,#77717f); }

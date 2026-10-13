@@ -29,7 +29,7 @@ New accounts are readers by default. Promote the initial editor/admin by inserti
 ## Product coverage
 Responsive discovery, reader workspace, cloud reading progress/bookmarks, community discussions, PDF upload, AI processing stages, metadata and chapter review, explicit publishing, semantic search, personal shelf, series/volume ratings, spoiler flags, safe volume recaps, notifications, permission/attribution records and takedown tracking.
 
-Every published translation must have a recorded, approved permission and attribution record. Permission from a translator does not replace rights in the original work; verify distribution rights and define takedown handling before public launch.
+Publication has two independent gates: approved translator permission/attribution and an approved, documented legal basis to distribute the original work. A translator's permission does not grant rights in the original novel. For public-domain works, record the basis and evidence; define takedown handling before public launch.
 
 ## Security
 - Browser code uses only the Supabase publishable key. Keep service/secret keys and the OpenAI key server-side.

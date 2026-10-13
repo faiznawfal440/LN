@@ -340,7 +340,7 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
   const [selectedNovelId,setSelectedNovelId]=useState(""); const [selectedVolumeId,setSelectedVolumeId]=useState("");
   const [job,setJob]=useState<ProcessingJob|null>(null); const [jobStages,setJobStages]=useState<ProcessingStage[]>([]); const [jobLogs,setJobLogs]=useState<ProcessingLog[]>([]);
   const [review,setReview]=useState<VolumeReview|null>(null);
-  const [permissionDraft,setPermissionDraft]=useState({translatorName:"",translationGroup:"",permissionScope:"",grantedAt:"",consentType:"email",consentReference:"",attributionText:"",monetizationApproved:false,permissionGranted:false});
+  const [permissionDraft,setPermissionDraft]=useState({translatorName:"",translationGroup:"",permissionScope:"",grantedAt:"",consentType:"email",consentReference:"",attributionText:"",originalRightsHolder:"",originalRightsScope:"",originalRightsReference:"",originalRightsVerified:false,monetizationApproved:false,permissionGranted:false});
   const [permissionReady,setPermissionReady]=useState(false); const [permissionSaving,setPermissionSaving]=useState(false);
   const [message,setMessage]=useState(""); const [saving,setSaving]=useState(false); const [uploading,setUploading]=useState(false); const [coverUploading,setCoverUploading]=useState(false);
   const [novelOpen,setNovelOpen]=useState(false); const [volumeOpen,setVolumeOpen]=useState(false); const [novelSaving,setNovelSaving]=useState(false); const [volumeSaving,setVolumeSaving]=useState(false);
@@ -352,7 +352,7 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
   const novels=adminCatalog; const selectedNovel=novels.find((n)=>n.id===selectedNovelId)??novels[0];
   const volumes=novels.flatMap((book)=>book.volumes.map((volume)=>({...volume,novelId:book.id,novelTitle:book.title})));
   const selectedVolume=volumes.find((v)=>v.id===selectedVolumeId); const selectedRealNovel=selectedVolume?novels.find((n)=>n.id===selectedVolume.novelId):selectedNovel;
-  const canManage=role==="editor"||role==="admin"; const canPublish=canManage&&Boolean(review?.page_count)&&Boolean(review?.chapters.length)&&selectedVolume?.publication_status==="review"&&permissionReady&&permissionDraft.permissionGranted&&Boolean(permissionDraft.translatorName.trim())&&Boolean(permissionDraft.permissionScope.trim())&&Boolean(permissionDraft.grantedAt)&&Boolean(permissionDraft.consentReference.trim())&&Boolean(permissionDraft.attributionText.trim());
+  const canManage=role==="editor"||role==="admin"; const canPublish=canManage&&Boolean(review?.page_count)&&Boolean(review?.chapters.length)&&selectedVolume?.publication_status==="review"&&permissionReady&&permissionDraft.permissionGranted&&permissionDraft.originalRightsVerified&&Boolean(permissionDraft.translatorName.trim())&&Boolean(permissionDraft.permissionScope.trim())&&Boolean(permissionDraft.grantedAt)&&Boolean(permissionDraft.consentReference.trim())&&Boolean(permissionDraft.attributionText.trim())&&Boolean(permissionDraft.originalRightsHolder.trim())&&Boolean(permissionDraft.originalRightsScope.trim())&&Boolean(permissionDraft.originalRightsReference.trim());
   async function loadAdminCatalog(){if(!user||role==="reader"){setAdminCatalog(catalog);return;}try{const data=await fetchAdminCatalog();setAdminCatalog(data);if(!selectedNovelId&&data[0]?.id)setSelectedNovelId(data[0].id);if(!selectedVolumeId&&data[0]?.volumes[0]?.id)setSelectedVolumeId(data[0].volumes[0].id);}catch{setAdminCatalog(catalog);}}
   useEffect(()=>{if(!user){setRole("reader");setAdminCatalog(catalog);return;}fetchCurrentUserRole().then(setRole).catch(()=>setRole("reader"));},[user?.id]);
   useEffect(()=>{if(role!=="reader")void loadAdminCatalog();else setAdminCatalog(catalog);},[role,catalog]);
@@ -368,16 +368,16 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
   async function refreshPermission(){
     if(!supabase||!selectedVolumeId||role==="reader"){
       setPermissionReady(false);
-      setPermissionDraft({translatorName:"",translationGroup:"",permissionScope:"",grantedAt:"",consentType:"email",consentReference:"",attributionText:"",monetizationApproved:false,permissionGranted:false});
+      setPermissionDraft({translatorName:"",translationGroup:"",permissionScope:"",grantedAt:"",consentType:"email",consentReference:"",attributionText:"",originalRightsHolder:"",originalRightsScope:"",originalRightsReference:"",originalRightsVerified:false,monetizationApproved:false,permissionGranted:false});
       return;
     }
     try{
       const {data,error} = await (supabase as any).from("volume_permissions")
-        .select("translator_name,translation_group,permission_scope,granted_at,consent_type,consent_reference,permission_status,attribution_text,monetization_approved")
+        .select("translator_name,translation_group,permission_scope,granted_at,consent_type,consent_reference,permission_status,attribution_text,monetization_approved,original_rights_holder,original_rights_scope,original_rights_reference,original_rights_status")
         .eq("volume_id",selectedVolumeId).maybeSingle();
       if(error) throw error;
       if(!data){
-        setPermissionDraft({translatorName:"",translationGroup:"",permissionScope:"",grantedAt:"",consentType:"email",consentReference:"",attributionText:"",monetizationApproved:false,permissionGranted:false});
+        setPermissionDraft({translatorName:"",translationGroup:"",permissionScope:"",grantedAt:"",consentType:"email",consentReference:"",attributionText:"",originalRightsHolder:"",originalRightsScope:"",originalRightsReference:"",originalRightsVerified:false,monetizationApproved:false,permissionGranted:false});
         setPermissionReady(false);
         return;
       }
@@ -385,10 +385,11 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
       setPermissionDraft({
         translatorName:data.translator_name??"", translationGroup:data.translation_group??"",
         permissionScope:data.permission_scope??"", grantedAt:data.granted_at??"", consentType:data.consent_type??"email",
-        consentReference:data.consent_reference??"", attributionText:data.attribution_text??"",
-        monetizationApproved:Boolean(data.monetization_approved), permissionGranted:approved
+        consentReference:data.consent_reference??"", attributionText:data.attribution_text??"", originalRightsHolder:data.original_rights_holder??"",
+        originalRightsScope:data.original_rights_scope??"", originalRightsReference:data.original_rights_reference??"",
+        originalRightsVerified:data.original_rights_status==="approved", monetizationApproved:Boolean(data.monetization_approved), permissionGranted:approved
       });
-      setPermissionReady(approved&&Boolean(data.translator_name?.trim())&&Boolean(data.permission_scope?.trim())&&Boolean(data.granted_at)&&Boolean(data.consent_reference?.trim())&&Boolean(data.attribution_text?.trim()));
+      setPermissionReady(approved&&data.original_rights_status==="approved"&&Boolean(data.translator_name?.trim())&&Boolean(data.permission_scope?.trim())&&Boolean(data.granted_at)&&Boolean(data.consent_reference?.trim())&&Boolean(data.attribution_text?.trim())&&Boolean(data.original_rights_holder?.trim())&&Boolean(data.original_rights_scope?.trim())&&Boolean(data.original_rights_reference?.trim()));
     }catch(error){
       setPermissionReady(false);
       setMessage(error instanceof Error?error.message:"Could not load the translator permission record.");
@@ -398,8 +399,8 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
     if(!user){onAuth();return;}
     if(!canManage||!selectedVolumeId||!supabase){setMessage("Editor or admin access is required to save permission records.");return;}
     const d=permissionDraft;
-    if(!d.translatorName.trim()||!d.permissionScope.trim()||!d.grantedAt||!d.consentReference.trim()||!d.attributionText.trim()){
-      setMessage("Complete translator, permission scope, consent date/reference, and attribution before saving.");return;
+    if(!d.translatorName.trim()||!d.permissionScope.trim()||!d.grantedAt||!d.consentReference.trim()||!d.attributionText.trim()||!d.originalRightsHolder.trim()||!d.originalRightsScope.trim()||!d.originalRightsReference.trim()){
+      setMessage("Complete translator consent and original-work rights holder, scope, and evidence reference before saving.");return;
     }
     setPermissionSaving(true);setMessage("");
     try{
@@ -407,12 +408,13 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
         volume_id:selectedVolumeId, translator_name:d.translatorName.trim(), translation_group:d.translationGroup.trim()||null,
         permission_scope:d.permissionScope.trim(), granted_at:d.grantedAt, consent_type:d.consentType,
         consent_reference:d.consentReference.trim(), permission_status:d.permissionGranted?"approved":"pending",
-        attribution_text:d.attributionText.trim(), monetization_approved:d.monetizationApproved, created_by:user.id,
+        attribution_text:d.attributionText.trim(), original_rights_holder:d.originalRightsHolder.trim(), original_rights_scope:d.originalRightsScope.trim(), original_rights_reference:d.originalRightsReference.trim(), original_rights_status:d.originalRightsVerified?"approved":"pending",
+        monetization_approved:d.monetizationApproved, created_by:user.id,
         updated_at:new Date().toISOString()
       },{onConflict:"volume_id"});
       if(error) throw error;
-      setPermissionReady(d.permissionGranted);
-      setMessage(d.permissionGranted?"Permission and attribution recorded. Publishing can proceed after AI review.":"Permission record saved as pending; publishing remains blocked.");
+      setPermissionReady(d.permissionGranted&&d.originalRightsVerified);
+      setMessage(d.permissionGranted&&d.originalRightsVerified?"Translator permission, original-work rights, and attribution recorded. Publishing can proceed after AI review.":"Record saved; publishing stays blocked until both translation permission and original-work rights are approved.");
     }catch(error){setMessage(error instanceof Error?error.message:"Could not save permission record.");}
     finally{setPermissionSaving(false);}
   }
@@ -445,7 +447,7 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
     <section className="management-grid permission-grid">
       <div className="management-card permission-card">
         <div className="card-head"><div><span>LEGAL & ATTRIBUTION</span><h2>Translator permission</h2></div></div>
-        <p className="permission-help">Publishing is blocked unless a translator permission record and attribution are approved. Permission from a translator does not replace rights in the original work.</p>
+        <p className="permission-help">Two separate checks are required: consent from the translator and a documented legal basis to distribute the original work (for example, rights-holder permission or verified public-domain status). The translator cannot grant the original rights on their behalf.</p>
         <label>Translator name<input value={permissionDraft.translatorName} onChange={e=>updatePermissionField("translatorName",e.target.value)} placeholder="Name of translator" /></label>
         <label>Fan-translation group (optional)<input value={permissionDraft.translationGroup} onChange={e=>updatePermissionField("translationGroup",e.target.value)} placeholder="Group or team" /></label>
         <label>Permission scope<textarea rows={2} value={permissionDraft.permissionScope} onChange={e=>updatePermissionField("permissionScope",e.target.value)} placeholder="What did the translator explicitly permit?" /></label>
@@ -455,6 +457,11 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
         </div>
         <label>Evidence reference<input value={permissionDraft.consentReference} onChange={e=>updatePermissionField("consentReference",e.target.value)} placeholder="Private evidence location or record ID" /></label>
         <label>Displayed attribution<textarea rows={2} value={permissionDraft.attributionText} onChange={e=>updatePermissionField("attributionText",e.target.value)} placeholder="Exact credit displayed on the published volume" /></label>
+        <div className="rights-review-divider"><span>ORIGINAL WORK RIGHTS</span><small>Separate from fan-translation consent</small></div>
+        <label>Original rights holder / rights basis<input value={permissionDraft.originalRightsHolder} onChange={e=>updatePermissionField("originalRightsHolder",e.target.value)} placeholder="Rights holder or public-domain basis" /></label>
+        <label>Distribution rights scope<textarea rows={2} value={permissionDraft.originalRightsScope} onChange={e=>updatePermissionField("originalRightsScope",e.target.value)} placeholder="Languages, territory, online display, commercial use, term, or public-domain basis" /></label>
+        <label>Original-work evidence reference<input value={permissionDraft.originalRightsReference} onChange={e=>updatePermissionField("originalRightsReference",e.target.value)} placeholder="Contract, license, official public-domain record, or permission reference" /></label>
+        <label className="check-field"><input type="checkbox" checked={permissionDraft.originalRightsVerified} onChange={e=>updatePermissionField("originalRightsVerified",e.target.checked)} /> I have independently verified that this site may distribute the original work</label>
         <label className="check-field"><input type="checkbox" checked={permissionDraft.monetizationApproved} onChange={e=>updatePermissionField("monetizationApproved",e.target.checked)} /> Explicit monetization approval, if applicable</label>
         <label className="check-field"><input type="checkbox" checked={permissionDraft.permissionGranted} onChange={e=>updatePermissionField("permissionGranted",e.target.checked)} /> I have verified this permission and attribution</label>
         <Button onClick={()=>void savePermission()} disabled={!canManage||permissionSaving||!selectedVolumeId}>{permissionSaving?"Saving…":"Save permission record"}</Button>

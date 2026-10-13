@@ -10,39 +10,55 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
-  IF TG_OP <> 'INSERT' AND OLD.novel_id IS NOT NULL THEN
-    UPDATE public.novels n
-      SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.novel_id=OLD.novel_id),
-          rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.novel_id=OLD.novel_id)
-      WHERE n.id=OLD.novel_id;
+  IF TG_OP = 'UPDATE' OR TG_OP = 'DELETE' THEN
+    IF OLD.novel_id IS NOT NULL THEN
+      UPDATE public.novels n
+        SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.novel_id=OLD.novel_id),
+            rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.novel_id=OLD.novel_id)
+        WHERE n.id=OLD.novel_id;
+    END IF;
+    IF OLD.volume_id IS NOT NULL THEN
+      UPDATE public.volumes v
+        SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.volume_id=OLD.volume_id),
+            rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.volume_id=OLD.volume_id)
+        WHERE v.id=OLD.volume_id;
+    END IF;
   END IF;
-  IF TG_OP <> 'INSERT' AND OLD.volume_id IS NOT NULL THEN
-    UPDATE public.volumes v
-      SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.volume_id=OLD.volume_id),
-          rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.volume_id=OLD.volume_id)
-      WHERE v.id=OLD.volume_id;
+
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.novel_id IS NOT NULL THEN
+      UPDATE public.novels n
+        SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.novel_id=NEW.novel_id),
+            rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.novel_id=NEW.novel_id)
+        WHERE n.id=NEW.novel_id;
+    END IF;
+    IF NEW.volume_id IS NOT NULL THEN
+      UPDATE public.volumes v
+        SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.volume_id=NEW.volume_id),
+            rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.volume_id=NEW.volume_id)
+        WHERE v.id=NEW.volume_id;
+    END IF;
+  ELSIF TG_OP = 'UPDATE' THEN
+    IF NEW.novel_id IS DISTINCT FROM OLD.novel_id AND NEW.novel_id IS NOT NULL THEN
+      UPDATE public.novels n
+        SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.novel_id=NEW.novel_id),
+            rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.novel_id=NEW.novel_id)
+        WHERE n.id=NEW.novel_id;
+    END IF;
+    IF NEW.volume_id IS DISTINCT FROM OLD.volume_id AND NEW.volume_id IS NOT NULL THEN
+      UPDATE public.volumes v
+        SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.volume_id=NEW.volume_id),
+            rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.volume_id=NEW.volume_id)
+        WHERE v.id=NEW.volume_id;
+    END IF;
   END IF;
-  IF TG_OP <> 'DELETE' AND NEW.novel_id IS NOT NULL
-     AND (TG_OP='INSERT' OR NEW.novel_id IS DISTINCT FROM OLD.novel_id) THEN
-    UPDATE public.novels n
-      SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.novel_id=NEW.novel_id),
-          rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.novel_id=NEW.novel_id)
-      WHERE n.id=NEW.novel_id;
-  END IF;
-  IF TG_OP <> 'DELETE' AND NEW.volume_id IS NOT NULL
-     AND (TG_OP='INSERT' OR NEW.volume_id IS DISTINCT FROM OLD.volume_id) THEN
-    UPDATE public.volumes v
-      SET rating_count=(SELECT count(*)::integer FROM public.ratings r WHERE r.volume_id=NEW.volume_id),
-          rating_avg=(SELECT round(avg(r.score)::numeric,2) FROM public.ratings r WHERE r.volume_id=NEW.volume_id)
-      WHERE v.id=NEW.volume_id;
-  END IF;
-  IF TG_OP='DELETE' THEN
+
+  IF TG_OP = 'DELETE' THEN
     RETURN OLD;
   END IF;
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS ratings_recalculate_aggregates ON public.ratings;
 CREATE TRIGGER ratings_recalculate_aggregates
 AFTER INSERT OR UPDATE OR DELETE ON public.ratings
