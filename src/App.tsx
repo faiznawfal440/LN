@@ -3,7 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { fetchCatalog, fetchAdminCatalog, fetchUserBookmarks, fetchUserProgress, saveReadingProgress, signIn, signUp, signOut, toggleBookmark, semanticSearch, startProcessingJob, uploadVolumePdf, createNovel, createVolume, updateNovelMetadata, updateVolumeMetadata, uploadNovelCover, updateChapterReview, fetchCurrentUserRole, fetchLatestProcessingJob, fetchProcessingStages, fetchProcessingLogs, fetchVolumeReview, publishVolume, getPublishedPdfUrl, fetchCommunityPosts, createCommunityPost, createCommunityComment, fetchUserBookshelf, saveBookshelfStatus, fetchUserRatings, saveUserRating, fetchReaderPreferences, saveReaderPreferences, fetchSafeVolumeKnowledge, fetchUserNotifications, markNotificationsRead, type UserNotification, type SafeKnowledgeEntry, type ReaderPreferences, type BookshelfItem, type BookshelfStatus, type UserRating, type CatalogBook, type UserBookmark, type SemanticSearchResult, type ProcessingJob, type ProcessingStage, type ProcessingLog, type VolumeReview, type CommunityPost } from "./lib/lumen";
 import { supabase } from "./lib/supabase";
 
-type View = "home" | "search" | "reader" | "admin" | "library" | "community";
+type View = "home" | "search" | "reader" | "admin" | "library" | "community" | "rights";
 type IconName =
   | "home" | "compass" | "book" | "search" | "users" | "bell" | "settings"
   | "arrow" | "play" | "star" | "clock" | "bookmark" | "sparkles" | "menu"
@@ -128,6 +128,7 @@ function Topbar({ title, setView, user, onAuth }: { title?: string; setView: (vi
     {title && <strong className="page-title">{title}</strong>}
     <button type="button" className="search-trigger" onClick={() => setView("search")}><Icon name="search"/><span>Search stories, scenes, characters...</span><kbd>⌘ K</kbd></button>
     <div className="top-actions notification-anchor">
+      <button type="button" className="rights-link" onClick={()=>setView("rights")}>Rights / takedown</button>
       <button type="button" className="icon-button notification-trigger" onClick={()=>{setOpen(v=>!v);setNotice("");if(!open)void refresh();}} aria-label="Notifications" aria-expanded={open}>
         <Icon name="bell"/>{unread>0&&<span className="notification-count">{unread>9?"9+":unread}</span>}
       </button>
@@ -564,6 +565,60 @@ function CommunityView({user,onAuth}:{user:User|null;onAuth:()=>void}){
   </main>;
 }
 
+function TakedownView(){
+  const [requesterName,setRequesterName]=useState("");
+  const [requesterEmail,setRequesterEmail]=useState("");
+  const [rightsHolder,setRightsHolder]=useState("");
+  const [contentUrl,setContentUrl]=useState("");
+  const [reason,setReason]=useState("");
+  const [volumeId,setVolumeId]=useState("");
+  const [submitting,setSubmitting]=useState(false);
+  const [message,setMessage]=useState("");
+  const [complete,setComplete]=useState(false);
+  async function submit(){
+    if(!requesterName.trim()||!requesterEmail.trim()||!rightsHolder.trim()||reason.trim().length<10){
+      setMessage("Complete your name, contact email, rights-holder name, and a reason of at least 10 characters.");return;
+    }
+    if(!supabase){
+      setMessage("The submission service is not connected yet. The form will become active after the Supabase database is configured.");
+      return;
+    }
+    setSubmitting(true);setMessage("");
+    try{
+      const {error}=await (supabase as any).from("content_takedown_requests").insert({
+        requester_name:requesterName.trim().slice(0,180),
+        requester_email:requesterEmail.trim().slice(0,320),
+        rights_holder:rightsHolder.trim().slice(0,300),
+        content_url:contentUrl.trim().slice(0,2000)||null,
+        reason:reason.trim().slice(0,5000),
+        volume_id:volumeId.trim()||null
+      });
+      if(error)throw error;
+      setComplete(true);
+      setMessage("Your request has been submitted for review.");
+    }catch(error){setMessage(error instanceof Error?error.message:"Your request could not be submitted.");}
+    finally{setSubmitting(false);}
+  }
+  return <main className="page rights-page">
+    <div className="search-intro"><span className="hero-kicker dark">RIGHTS & CONTENT SAFETY</span><h1>Request a content review.</h1><p>Rights holders and authorized representatives can report a volume for review or removal. Include enough information for the moderation team to locate the work and verify the request.</p></div>
+    <section className="rights-card">
+      <div className="rights-notice"><strong>What to include</strong><p>Provide the rights holder, a URL or volume identifier, and the reason for your request. Please do not submit passwords, identity documents, or other sensitive information through this form.</p></div>
+      {!complete&&<div className="rights-form">
+        <label>Your name<input value={requesterName} maxLength={180} onChange={e=>setRequesterName(e.target.value)} autoComplete="name" required/></label>
+        <label>Contact email<input type="email" value={requesterEmail} maxLength={320} onChange={e=>setRequesterEmail(e.target.value)} autoComplete="email" required/></label>
+        <label>Rights holder / represented party<input value={rightsHolder} maxLength={300} onChange={e=>setRightsHolder(e.target.value)} required/></label>
+        <label>Content URL (optional)<input type="url" value={contentUrl} maxLength={2000} onChange={e=>setContentUrl(e.target.value)} placeholder="https://…"/></label>
+        <label>Volume ID (optional)<input value={volumeId} onChange={e=>setVolumeId(e.target.value)} placeholder="UUID shown in the volume record"/></label>
+        <label>Reason and requested action<textarea rows={6} value={reason} maxLength={5000} onChange={e=>setReason(e.target.value)} placeholder="Explain the rights concern and whether you request review, correction, or removal." required/></label>
+        <div className="rights-form-footer"><small>{reason.length}/5000 characters</small><Button onClick={()=>void submit()} disabled={submitting}>{submitting?"Submitting…":"Submit review request"}</Button></div>
+      </div>}
+      {message&&<div className={complete?"rights-success":"upload-message"}>{message}</div>}
+      {complete&&<Button variant="secondary" onClick={()=>{setRequesterName("");setRequesterEmail("");setRightsHolder("");setContentUrl("");setReason("");setVolumeId("");setComplete(false);setMessage("");}}>Submit another request</Button>}
+    </section>
+    <p className="rights-footnote">Submission is a request for human review, not a guarantee of any legal outcome. The service operator should review and respond through an established contact process.</p>
+  </main>;
+}
+
 function AuthDialog({ open, onClose, onSignedIn }: { open: boolean; onClose: () => void; onSignedIn: (user: User) => void }) {
   const [mode,setMode]=useState<"signin"|"signup">("signin");
   const [email,setEmail]=useState(""); const [password,setPassword]=useState(""); const [name,setName]=useState(""); const [message,setMessage]=useState(""); const [loading,setLoading]=useState(false);
@@ -671,5 +726,5 @@ export default function App() {
 
   async function handleSignOut() { await signOut(); setUser(null); setReaderTarget({volumeId:"",chapterId:null}); setView("home"); if (typeof window !== "undefined") window.history.replaceState(null, "", window.location.pathname + window.location.search); }
 
-  return <><div className="app-shell"><Sidebar view={view} setView={setView} onAuth={() => setAuthOpen(true)} user={user}/><div className="main-shell"><Topbar title={view === "admin" ? "Content operations" : view === "library" ? "My library" : undefined} setView={setView} user={user} onAuth={() => setAuthOpen(true)}/>{view === "home" && <Home setView={setView} catalog={catalog} progress={progress} onRead={(book)=>openReader({book})}/>} {view === "community" && <CommunityView user={user} onAuth={()=>setAuthOpen(true)}/>} {view === "search" && <SearchView setView={setView} user={user} onAuth={() => setAuthOpen(true)} onRead={(target)=>openReader(target)}/>} {view === "admin" && <AdminView catalog={catalog} user={user} onAuth={() => setAuthOpen(true)} onCatalogChanged={refreshCatalog}/>} {view === "library" && <LibraryView user={user} progress={progress} bookmarks={bookmarks} catalog={catalog} onAuth={() => setAuthOpen(true)} onRead={openReader}/>}</div><BottomNav view={view} setView={(next)=> next === "reader" ? openReader() : setView(next)}/></div>{view === "reader" && <Reader setView={(next)=>{if(next !== "reader") { setView(next); if (typeof window !== "undefined") window.history.replaceState(null, "", window.location.pathname + window.location.search); }}} user={user} onAuth={() => setAuthOpen(true)} syncVolumeId={targetVolume?.id ?? null} syncChapterId={targetChapter?.id ?? null} volume={targetVolume} chapter={targetChapter} onSelectChapter={selectReaderChapter}/>}<AuthDialog open={authOpen} onClose={() => setAuthOpen(false)} onSignedIn={(nextUser) => setUser(nextUser)}/>{user && <button type="button" className="signout-fab" onClick={handleSignOut}>Sign out</button>}</>;
+  return <><div className="app-shell"><Sidebar view={view} setView={setView} onAuth={() => setAuthOpen(true)} user={user}/><div className="main-shell"><Topbar title={view === "admin" ? "Content operations" : view === "library" ? "My library" : undefined} setView={setView} user={user} onAuth={() => setAuthOpen(true)}/>{view === "home" && <Home setView={setView} catalog={catalog} progress={progress} onRead={(book)=>openReader({book})}/>} {view === "rights" && <TakedownView/>} {view === "community" && <CommunityView user={user} onAuth={()=>setAuthOpen(true)}/>} {view === "search" && <SearchView setView={setView} user={user} onAuth={() => setAuthOpen(true)} onRead={(target)=>openReader(target)}/>} {view === "admin" && <AdminView catalog={catalog} user={user} onAuth={() => setAuthOpen(true)} onCatalogChanged={refreshCatalog}/>} {view === "library" && <LibraryView user={user} progress={progress} bookmarks={bookmarks} catalog={catalog} onAuth={() => setAuthOpen(true)} onRead={openReader}/>}</div><BottomNav view={view} setView={(next)=> next === "reader" ? openReader() : setView(next)}/></div>{view === "reader" && <Reader setView={(next)=>{if(next !== "reader") { setView(next); if (typeof window !== "undefined") window.history.replaceState(null, "", window.location.pathname + window.location.search); }}} user={user} onAuth={() => setAuthOpen(true)} syncVolumeId={targetVolume?.id ?? null} syncChapterId={targetChapter?.id ?? null} volume={targetVolume} chapter={targetChapter} onSelectChapter={selectReaderChapter}/>}<AuthDialog open={authOpen} onClose={() => setAuthOpen(false)} onSignedIn={(nextUser) => setUser(nextUser)}/>{user && <button type="button" className="signout-fab" onClick={handleSignOut}>Sign out</button>}</>;
 }

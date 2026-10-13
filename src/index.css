@@ -425,3 +425,19 @@ kbd { border:1px solid var(--line); padding:3px 6px; border-radius:5px; backgrou
 .rights-review-divider { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:18px; margin-top:6px; border-top:1px solid var(--line,#e8e5ed); }
 .rights-review-divider span { font-size:9px; font-weight:800; letter-spacing:.1em; }
 .rights-review-divider small { font-size:8px; color:var(--muted,#77717f); }
+
+.rights-link { border:0; background:transparent; color:var(--muted,#77717f); padding:6px 8px; font-size:9px; white-space:nowrap; cursor:pointer; }
+.rights-link:hover { color:var(--violet,#7866b2); }
+.rights-page { max-width:880px; }
+.rights-card { padding:22px; margin:25px 0; border:1px solid var(--line,#e8e5ed); border-radius:16px; background:var(--surface,#fff); }
+.rights-notice { padding:15px; margin-bottom:18px; border-radius:10px; background:color-mix(in srgb,var(--violet,#7866b2) 7%,white); }
+.rights-notice strong { font-size:11px; }
+.rights-notice p { font-size:10px; line-height:1.65; color:var(--muted,#77717f); margin:7px 0 0; }
+.rights-form { display:grid; gap:13px; }
+.rights-form label { display:grid; gap:6px; font-size:10px; font-weight:600; }
+.rights-form input,.rights-form textarea { width:100%; border:1px solid var(--line,#e8e5ed); border-radius:9px; padding:10px 11px; font:inherit; color:var(--ink,#211f2a); background:var(--surface,#fff); outline-offset:2px; }
+.rights-form textarea { resize:vertical; line-height:1.55; }
+.rights-form-footer { display:flex; justify-content:space-between; align-items:center; gap:15px; }
+.rights-form-footer small,.rights-footnote { color:var(--muted,#77717f); font-size:9px; line-height:1.6; }
+.rights-success { padding:12px 14px; margin:15px 0; border-radius:9px; background:#eef8f1; color:#1d6845; font-size:10px; }
+@media(max-width:760px){.rights-link{font-size:8px;padding:4px}.rights-card{padding:15px}.rights-form-footer{align-items:flex-start;flex-direction:column}}
