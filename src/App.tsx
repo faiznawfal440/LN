@@ -4,6 +4,8 @@ import { fetchCatalog, fetchAdminCatalog, fetchUserBookmarks, fetchUserProgress,
 import { supabase } from "./lib/supabase";
 
 type View = "home" | "search" | "reader" | "admin" | "library" | "community" | "rights";
+type TakedownStatus = "open" | "reviewing" | "resolved" | "rejected";
+type TakedownRequest = { id:string; volume_id:string|null; requester_name:string; requester_email:string; rights_holder:string; content_url:string|null; reason:string; status:TakedownStatus; admin_notes:string|null; created_at:string; };
 type IconName =
   | "home" | "compass" | "book" | "search" | "users" | "bell" | "settings"
   | "arrow" | "play" | "star" | "clock" | "bookmark" | "sparkles" | "menu"
@@ -344,6 +346,7 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
   const [review,setReview]=useState<VolumeReview|null>(null);
   const [permissionDraft,setPermissionDraft]=useState({translatorName:"",translationGroup:"",permissionScope:"",grantedAt:"",consentType:"email",consentReference:"",attributionText:"",originalRightsHolder:"",originalRightsScope:"",originalRightsReference:"",originalRightsVerified:false,monetizationApproved:false,permissionGranted:false});
   const [permissionReady,setPermissionReady]=useState(false); const [permissionSaving,setPermissionSaving]=useState(false);
+  const [takedownRequests,setTakedownRequests]=useState<TakedownRequest[]>([]); const [takedownDrafts,setTakedownDrafts]=useState<Record<string,{status:TakedownStatus;adminNotes:string}>>({}); const [takedownLoading,setTakedownLoading]=useState(false); const [takedownSaving,setTakedownSaving]=useState("");
   const [message,setMessage]=useState(""); const [saving,setSaving]=useState(false); const [uploading,setUploading]=useState(false); const [coverUploading,setCoverUploading]=useState(false);
   const [novelOpen,setNovelOpen]=useState(false); const [volumeOpen,setVolumeOpen]=useState(false); const [novelSaving,setNovelSaving]=useState(false); const [volumeSaving,setVolumeSaving]=useState(false);
   const [novelTitle,setNovelTitle]=useState(""); const [novelAlternateTitle,setNovelAlternateTitle]=useState(""); const [novelAuthor,setNovelAuthor]=useState(""); const [novelDescription,setNovelDescription]=useState(""); const [novelGenres,setNovelGenres]=useState(""); const [novelLanguage,setNovelLanguage]=useState("en"); const [novelVolumeNumber,setNovelVolumeNumber]=useState("1"); const [novelVolumeTitle,setNovelVolumeTitle]=useState("Volume 1"); const [novelVolumeSubtitle,setNovelVolumeSubtitle]=useState("");
@@ -421,7 +424,40 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
     finally{setPermissionSaving(false);}
   }
 
-  useEffect(()=>{void refreshJob();void refreshReview();void refreshPermission();if(!selectedVolumeId||!user)return;const id=window.setInterval(()=>void refreshJob(),3000);return()=>window.clearInterval(id);},[selectedVolumeId,user?.id,role]);
+  async function refreshTakedownRequests(){
+    if(!supabase||!user||role==="reader"){setTakedownRequests([]);setTakedownDrafts({});return;}
+    setTakedownLoading(true);
+    try{
+      const {data,error}=await (supabase as any).from("content_takedown_requests")
+        .select("id,volume_id,requester_name,requester_email,rights_holder,content_url,reason,status,admin_notes,created_at")
+        .order("created_at",{ascending:false}).limit(100);
+      if(error) throw error;
+      const rows=(data??[]) as TakedownRequest[];
+      setTakedownRequests(rows);
+      setTakedownDrafts(Object.fromEntries(rows.map((item)=>[item.id,{status:item.status,adminNotes:item.admin_notes??""}])));
+    }catch(error){setMessage(error instanceof Error?error.message:"Could not load rights review requests.");}
+    finally{setTakedownLoading(false);}
+  }
+  async function saveTakedownReview(id:string){
+    if(!supabase||!user||!canManage)return;
+    const draft=takedownDrafts[id];if(!draft)return;
+    setTakedownSaving(id);setMessage("");
+    try{
+      const now=new Date().toISOString();
+      const {error}=await (supabase as any).from("content_takedown_requests").update({
+        status:draft.status,admin_notes:draft.adminNotes.trim().slice(0,5000)||null,
+        reviewed_by:user.id,updated_at:now,
+        responded_at:draft.status==="resolved"||draft.status==="rejected"?now:null
+      }).eq("id",id);
+      if(error)throw error;
+      await refreshTakedownRequests();
+      setMessage("Rights request review saved.");
+    }catch(error){setMessage(error instanceof Error?error.message:"Could not save rights request review.");}
+    finally{setTakedownSaving("");}
+  }
+
+    useEffect(()=>{void refreshJob();void refreshReview();void refreshPermission();if(!selectedVolumeId||!user)return;const id=window.setInterval(()=>void refreshJob(),3000);return()=>window.clearInterval(id);},[selectedVolumeId,user?.id,role]);
+  useEffect(()=>{void refreshTakedownRequests();},[user?.id,role]);
   async function handleCreateNovel(){if(!user){onAuth();return;}if(!novelTitle.trim()){setMessage("Novel title is required.");return;}const number=Number.parseInt(novelVolumeNumber,10);if(!Number.isInteger(number)||number<1){setMessage("Volume number must be 1 or higher.");return;}setNovelSaving(true);setMessage("");try{const r=await createNovel({user,title:novelTitle.trim(),alternateTitle:novelAlternateTitle.trim()||undefined,author:novelAuthor.trim()||undefined,description:novelDescription.trim()||undefined,genres:novelGenres.split(",").map(x=>x.trim()).filter(Boolean),language:novelLanguage.trim()||"en",volumeNumber:number,volumeTitle:novelVolumeTitle.trim()||("Volume "+number),volumeSubtitle:novelVolumeSubtitle.trim()||undefined});if(r.error)throw r.error;const data=await fetchAdminCatalog();setAdminCatalog(data);const created=data.find((n)=>n.slug===r.data?.slug);if(created?.id)setSelectedNovelId(created.id);if(r.data?.volume_id)setSelectedVolumeId(r.data.volume_id);await onCatalogChanged();setNovelOpen(false);setNovelTitle("");setNovelAlternateTitle("");setNovelAuthor("");setNovelDescription("");setNovelGenres("");setNovelLanguage("en");setNovelVolumeNumber("1");setNovelVolumeTitle("Volume 1");setNovelVolumeSubtitle("");setMessage("Draft novel created. Upload its PDF.");}catch(error){setMessage(error instanceof Error?error.message:"Novel creation failed.");}finally{setNovelSaving(false);}}
   async function saveNovel(){if(!selectedRealNovel)return;setSaving(true);try{await updateNovelMetadata({novelId:selectedRealNovel.id,title:editTitle,alternateTitle:editAlt,author:editAuthor,description:editDescription,genres:editGenres.split(",").map(x=>x.trim()).filter(Boolean),language:editLanguage,featured:editFeatured});await loadAdminCatalog();await onCatalogChanged();setMessage("Novel metadata saved.");}catch(error){setMessage(error instanceof Error?error.message:"Could not save novel.");}finally{setSaving(false);}}
   async function saveVolume(){if(!selectedVolume)return;const n=Number.parseInt(volNumber,10);if(!Number.isInteger(n)||n<1){setMessage("Volume number must be 1 or higher.");return;}setVolumeSaving(true);try{await updateVolumeMetadata({volumeId:selectedVolume.id,volumeNumber:n,title:volTitle,subtitle:volSubtitle,description:volDescription});await loadAdminCatalog();await onCatalogChanged();setMessage("Volume metadata saved.");}catch(error){setMessage(error instanceof Error?error.message:"Could not save volume.");}finally{setVolumeSaving(false);}}
@@ -469,6 +505,26 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
         <Button onClick={()=>void savePermission()} disabled={!canManage||permissionSaving||!selectedVolumeId}>{permissionSaving?"Saving…":"Save permission record"}</Button>
         <small className="permission-status">{permissionReady?"Approved record saved":"Not cleared for publication until an approved record is saved"}</small>
       </div>
+    </section>
+    <section className="management-card takedown-queue-card">
+      <div className="card-head"><div><span>RIGHTS & COMPLIANCE</span><h2>Content review queue</h2></div><Button variant="secondary" onClick={()=>void refreshTakedownRequests()} disabled={takedownLoading}>{takedownLoading?"Refreshing…":"Refresh queue"}</Button></div>
+      <p className="permission-help">Review rights-holder reports and record the moderation decision. This queue is visible only to editors and admins.</p>
+      {!canManage?<div className="result-placeholder"><strong>Staff access required</strong><p>Sign in with an editor/admin role to review rights requests.</p></div>:takedownLoading&&takedownRequests.length===0?<div className="result-placeholder">Loading rights requests…</div>:takedownRequests.length===0?<div className="result-placeholder"><strong>No requests in the queue.</strong><p>New public reports will appear here after the Supabase backend is connected.</p></div>:<div className="takedown-queue">{takedownRequests.map((item)=>{
+        const draft=takedownDrafts[item.id]??{status:item.status,adminNotes:item.admin_notes??""};
+        return <article className="takedown-request" key={item.id}>
+          <div className="takedown-request-head"><div><strong>{item.rights_holder}</strong><small>{new Date(item.created_at).toLocaleString()} · {item.volume_id?"Volume "+item.volume_id:"No volume ID supplied"}</small></div><span className={"takedown-status status-"+draft.status}>{draft.status}</span></div>
+          <div className="takedown-requester"><b>{item.requester_name}</b><span>{item.requester_email}</span></div>
+          {item.content_url&&<p className="takedown-url"><b>Content URL:</b> {item.content_url}</p>}
+          <p className="takedown-reason">{item.reason}</p>
+          <div className="takedown-review-controls">
+            <label>Decision<select value={draft.status} onChange={e=>setTakedownDrafts(current=>({...current,[item.id]:{...draft,status:e.target.value as TakedownStatus}}))}>
+              <option value="open">Open</option><option value="reviewing">Reviewing</option><option value="resolved">Resolved</option><option value="rejected">Rejected</option>
+            </select></label>
+            <label>Internal review notes<textarea rows={3} value={draft.adminNotes} onChange={e=>setTakedownDrafts(current=>({...current,[item.id]:{...draft,adminNotes:e.target.value}}))} placeholder="Record the decision and any follow-up needed."/></label>
+          </div>
+          <Button onClick={()=>void saveTakedownReview(item.id)} disabled={takedownSaving===item.id||!canManage}>{takedownSaving===item.id?"Saving…":"Save review"}</Button>
+        </article>;
+      })}</div>}
     </section>
     <div className="admin-layout"><section className="pipeline-card"><div className="card-head"><div><span>LIVE PIPELINE</span><h2>AI processing stages</h2></div><div>{job&&(job.status==="failed"||job.status==="cancelled")&&<Button variant="secondary" onClick={()=>void retryJob()}>Retry</Button>}</div></div><div className="pipeline">{(jobStages.length?jobStages:stages.map((stage,i)=>({id:"placeholder-"+i,stage_order:i+1,stage_key:stage.toLowerCase().replace(/ /g,"_"),status:"waiting" as const,progress_percent:0,job_id:"",started_at:null,finished_at:null,error_message:null,metadata:{}}))).map((stage,i)=><button type="button" key={stage.id} className={(stage.status==="completed"?"done ":"")+(stage.status==="running"?"current ":"")} onClick={()=>undefined}><span className="stage-icon">{stage.status==="completed"?<Icon name="check" size={15}/>:stage.status==="running"?<Icon name="sparkles" size={16}/>:stage.status==="failed"?<Icon name="close" size={15}/>:i+1}</span><div><strong>{stage.stage_key.replace(/_/g," ")}</strong><small>{stage.status==="waiting"?"Waiting":stage.status==="running"?"Running":stage.status==="completed"?"Completed":stage.status==="failed"?"Failed":"Skipped"}</small></div>{stage.status==="running"&&<em>{Math.round(Number(stage.progress_percent))}%</em>}</button>)}</div><div className="pipeline-footer"><span>{job?.current_stage??"No active job"}</span><b>{Math.round(Number(job?.progress_percent??0))}%</b><div className="progress"><i style={{width:(Math.round(Number(job?.progress_percent??0))+"%")}}></i></div></div></section>
       <section className="console-card"><div className="card-head"><div><span>PROCESSING CONSOLE</span><h2>Live activity</h2></div></div><div className="console">{jobLogs.length?jobLogs.map(log=><p key={log.id}><time>{new Date(log.created_at).toLocaleTimeString()}</time><span className={log.level}>{log.level.toUpperCase()}</span> {log.message}</p>):<div className="result-placeholder"><Icon name="clock"/><strong>No job logs yet.</strong><p>Upload a PDF to start ingestion.</p></div>}</div><div className="quality-grid"><div><span>Warnings / errors</span><strong>{jobLogs.filter(l=>l.level==="warn"||l.level==="error").length}</strong><small>{job?.error_message??"None"}</small></div><div><span>Status</span><strong>{String(job?.status??"idle").toUpperCase()}</strong><small>{job?.current_stage??"—"}</small></div><div><span>Publish</span><strong>{canPublish?"READY":"BLOCKED"}</strong><small>{canPublish?"Review checks passed":"Needs extracted pages + review state"}</small></div></div></section></div>
