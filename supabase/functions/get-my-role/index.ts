@@ -10,17 +10,13 @@ Deno.serve(
     if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
     const { data, error } = await ctx.supabaseAdmin
-      .schema("private")
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", ctx.userClaims?.id)
-      .maybeSingle();
+      .rpc("lumen_get_user_role", { p_user_id: ctx.userClaims?.id });
 
     if (error) {
       return Response.json({ error: "Unable to load account role." }, { status: 500, headers: corsHeaders });
     }
 
-    const role = data?.role === "admin" || data?.role === "editor" ? data.role : "reader";
+    const role = data === "admin" || data === "editor" ? data : "reader";
     return Response.json({ role }, { headers: corsHeaders });
   }),
 );

@@ -25,14 +25,10 @@ Deno.serve(
       const title = typeof body.title === "string" ? body.title.trim() : "";
       if (!title) return Response.json({ error: "Title is required." }, { status: 400, headers: corsHeaders });
 
-      const { data: roleRow, error: roleError } = await ctx.supabaseAdmin
-        .schema("private")
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", ctx.userClaims?.id)
-        .maybeSingle();
+      const { data: role, error: roleError } = await ctx.supabaseAdmin
+        .rpc("lumen_get_user_role", { p_user_id: ctx.userClaims?.id });
 
-      if (roleError || !roleRow || !["editor", "admin"].includes(roleRow.role)) {
+      if (roleError || !["editor", "admin"].includes(role ?? "")) {
         return Response.json({ error: "Editor or admin role required." }, { status: 403, headers: corsHeaders });
       }
 

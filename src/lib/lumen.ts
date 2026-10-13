@@ -562,3 +562,30 @@ export async function semanticSearch(args:{query:string;matchCount?:number;match
     },
   });
 }
+
+
+export type UserNotification = {
+  id:string;
+  notification_type:string;
+  title:string;
+  body:string;
+  link:string|null;
+  metadata:Record<string,unknown>;
+  created_at:string;
+  read_at:string|null;
+};
+
+export async function fetchUserNotifications(userId:string):Promise<UserNotification[]> {
+  if(!supabase) return [];
+  const {data,error}=await (supabase as any).from("notifications")
+    .select("id,notification_type,title,body,link,metadata,created_at,read_at")
+    .eq("user_id",userId).order("created_at",{ascending:false}).limit(30);
+  if(error) throw error;
+  return (data??[]) as UserNotification[];
+}
+export async function markNotificationsRead(userId:string,ids:string[]) {
+  if(!supabase||!ids.length) return;
+  const {error}=await (supabase as any).from("notifications")
+    .update({read_at:new Date().toISOString()}).eq("user_id",userId).in("id",ids).is("read_at",null);
+  if(error) throw error;
+}

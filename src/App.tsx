@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
-import { fetchCatalog, fetchAdminCatalog, fetchUserBookmarks, fetchUserProgress, saveReadingProgress, signIn, signUp, signOut, toggleBookmark, semanticSearch, startProcessingJob, uploadVolumePdf, createNovel, createVolume, updateNovelMetadata, updateVolumeMetadata, uploadNovelCover, updateChapterReview, fetchCurrentUserRole, fetchLatestProcessingJob, fetchProcessingStages, fetchProcessingLogs, fetchVolumeReview, publishVolume, getPublishedPdfUrl, fetchCommunityPosts, createCommunityPost, createCommunityComment, fetchUserBookshelf, saveBookshelfStatus, fetchUserRatings, saveUserRating, fetchReaderPreferences, saveReaderPreferences, fetchSafeVolumeKnowledge, type SafeKnowledgeEntry, type ReaderPreferences, type BookshelfItem, type BookshelfStatus, type UserRating, type CatalogBook, type UserBookmark, type SemanticSearchResult, type ProcessingJob, type ProcessingStage, type ProcessingLog, type VolumeReview, type CommunityPost } from "./lib/lumen";
+import { fetchCatalog, fetchAdminCatalog, fetchUserBookmarks, fetchUserProgress, saveReadingProgress, signIn, signUp, signOut, toggleBookmark, semanticSearch, startProcessingJob, uploadVolumePdf, createNovel, createVolume, updateNovelMetadata, updateVolumeMetadata, uploadNovelCover, updateChapterReview, fetchCurrentUserRole, fetchLatestProcessingJob, fetchProcessingStages, fetchProcessingLogs, fetchVolumeReview, publishVolume, getPublishedPdfUrl, fetchCommunityPosts, createCommunityPost, createCommunityComment, fetchUserBookshelf, saveBookshelfStatus, fetchUserRatings, saveUserRating, fetchReaderPreferences, saveReaderPreferences, fetchSafeVolumeKnowledge, fetchUserNotifications, markNotificationsRead, type UserNotification, type SafeKnowledgeEntry, type ReaderPreferences, type BookshelfItem, type BookshelfStatus, type UserRating, type CatalogBook, type UserBookmark, type SemanticSearchResult, type ProcessingJob, type ProcessingStage, type ProcessingLog, type VolumeReview, type CommunityPost } from "./lib/lumen";
 import { supabase } from "./lib/supabase";
 
 type View = "home" | "search" | "reader" | "admin" | "library" | "community";
@@ -107,11 +107,40 @@ function Sidebar({ view, setView, onAuth, user }: { view: View; setView: (view: 
 }
 
 function Topbar({ title, setView, user, onAuth }: { title?: string; setView: (view: View) => void; user: User | null; onAuth: () => void }) {
+  const [items,setItems]=useState<UserNotification[]>([]);
+  const [open,setOpen]=useState(false);
+  const [notice,setNotice]=useState("");
+  async function refresh(){
+    if(!user){setItems([]);return;}
+    try{setItems(await fetchUserNotifications(user.id));}catch(error){setNotice(error instanceof Error?error.message:"Could not load notifications.");}
+  }
+  useEffect(()=>{void refresh();},[user?.id]);
+  async function markAllRead(){
+    if(!user)return;
+    const ids=items.filter((item)=>!item.read_at).map((item)=>item.id);
+    if(!ids.length)return;
+    try{await markNotificationsRead(user.id,ids);setItems((current)=>current.map((item)=>ids.includes(item.id)?{...item,read_at:new Date().toISOString()}:item));}
+    catch(error){setNotice(error instanceof Error?error.message:"Could not mark notifications read.");}
+  }
+  const unread=items.filter((item)=>!item.read_at).length;
   return <header className="topbar">
     <div className="mobile-logo"><Logo compact /></div>
     {title && <strong className="page-title">{title}</strong>}
     <button type="button" className="search-trigger" onClick={() => setView("search")}><Icon name="search"/><span>Search stories, scenes, characters...</span><kbd>⌘ K</kbd></button>
-    <div className="top-actions"><Button variant="icon" icon="bell" label="Notifications"/><button type="button" className="avatar small" onClick={onAuth} aria-label="Account">{user ? ((user.user_metadata?.full_name as string | undefined)?.slice(0,2).toUpperCase() || user.email?.slice(0,2).toUpperCase() || "LR") : "LR"}</button></div>
+    <div className="top-actions notification-anchor">
+      <button type="button" className="icon-button notification-trigger" onClick={()=>{setOpen(v=>!v);setNotice("");if(!open)void refresh();}} aria-label="Notifications" aria-expanded={open}>
+        <Icon name="bell"/>{unread>0&&<span className="notification-count">{unread>9?"9+":unread}</span>}
+      </button>
+      <button type="button" className="avatar small" onClick={onAuth} aria-label="Account">{user ? ((user.user_metadata?.full_name as string | undefined)?.slice(0,2).toUpperCase() || user.email?.slice(0,2).toUpperCase() || "LR") : "LR"}</button>
+      {open&&<section className="notification-popover" aria-label="Notifications">
+        <div className="notification-head"><div><strong>Notifications</strong><small>{unread?unread+" unread":"You’re all caught up"}</small></div><button type="button" onClick={()=>void markAllRead()} disabled={!unread}>Mark all read</button></div>
+        {notice&&<p className="notification-notice">{notice}</p>}
+        {!user?<div className="notification-empty"><p>Sign in to view your notifications.</p><button type="button" onClick={onAuth}>Sign in</button></div>:items.length===0?<div className="notification-empty"><p>No notifications yet.</p><small>New volume announcements will appear here.</small></div>:
+          <div className="notification-list">{items.map(item=><article className={"notification-item "+(!item.read_at?"unread":"")} key={item.id}>
+            <span className="notification-dot"/><div><strong>{item.title}</strong><p>{item.body}</p><small>{new Date(item.created_at).toLocaleString()}</small></div>
+          </article>)}</div>}
+      </section>}
+    </div>
   </header>;
 }
 
@@ -569,7 +598,13 @@ export default function App() {
       books = catalogToDisplayBooks(items);
       forceCatalogRefresh((v) => v + 1);
     } else {
-      books = [];
+      // Keep demo cards visible until the real catalog is connected and contains published novels.
+      books = [
+        { title: "The Saint of Hollow Skies", alt: "Sora no Seijo", author: "Mina Kurosawa", image: photos.castle, rating: "4.9", tag: "Fantasy", volume: "Vol. 4", fresh: true },
+        { title: "Asteria Academy", alt: "Mahō Gakuen Asteria", author: "Ren Ishikawa", image: photos.tower, rating: "4.8", tag: "Academy", volume: "Vol. 7", fresh: true },
+        { title: "The Last Cartographer", alt: "Saigo no Chizu-shi", author: "Aya Mori", image: photos.hill, rating: "4.7", tag: "Adventure", volume: "Vol. 3", fresh: false },
+        { title: "Letters Beyond the Moon", alt: "Tsuki no Tegami", author: "Haru Senda", image: photos.moon, rating: "4.9", tag: "Drama", volume: "Vol. 6", fresh: false },
+      ];
       forceCatalogRefresh((v) => v + 1);
     }
   }

@@ -16,7 +16,7 @@ Deno.serve(withSupabase({auth:"user"},async(req,ctx)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders}); let jobId=""; let stageName="";
  try{
   const body=await req.json();jobId=typeof body?.job_id==="string"?body.job_id:"";if(!jobId)return Response.json({error:"job_id is required."},{status:400,headers:corsHeaders});
-  const {data:role}=await ctx.supabaseAdmin.schema("private").from("user_roles").select("role").eq("user_id",ctx.userClaims?.id).maybeSingle();if(!["editor","admin"].includes(role?.role))return Response.json({error:"Editor or admin role required."},{status:403,headers:corsHeaders});
+  const {data:role,error:roleError}=await ctx.supabaseAdmin.rpc("lumen_get_user_role",{p_user_id:ctx.userClaims?.id});if(roleError||!["editor","admin"].includes(role??""))return Response.json({error:"Editor or admin role required."},{status:403,headers:corsHeaders});
   const {data:job,error:je}=await ctx.supabaseAdmin.from("processing_jobs").select("id,volume_id,input_path,file_size_bytes").eq("id",jobId).maybeSingle();if(je)throw je;if(!job?.volume_id)return Response.json({error:"Processing job or volume not found."},{status:404,headers:corsHeaders});
   const {data:volume,error:ve}=await ctx.supabaseAdmin.from("volumes").select("id,novel_id,volume_number,title,subtitle,metadata").eq("id",job.volume_id).maybeSingle();if(ve)throw ve;if(!volume)throw new Error("Volume not found.");
   const {data:novel,error:ne}=await ctx.supabaseAdmin.from("novels").select("id,title,alternate_title,author,description,genres,language,publication_status").eq("id",volume.novel_id).maybeSingle();if(ne)throw ne;if(!novel)throw new Error("Novel not found.");
