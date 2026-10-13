@@ -87,6 +87,7 @@ export type CommunityPost = {
   user_id:string;
   novel_id:string|null;
   content:string;
+  is_spoiler:boolean;
   created_at:string;
   display_name:string;
   novel_title:string|null;
@@ -97,6 +98,7 @@ export type CommunityComment = {
   post_id:string;
   user_id:string;
   content:string;
+  is_spoiler:boolean;
   created_at:string;
   display_name:string;
 };
@@ -254,7 +256,7 @@ export async function getPublishedPdfUrl(volumeId:string):Promise<string> {
 
 export async function fetchCommunityPosts():Promise<CommunityPost[]> {
   if (!supabase) return [];
-  const {data,error}=await supabase.from("community_posts").select("id,user_id,novel_id,content,created_at").order("created_at",{ascending:false}).limit(50);
+  const {data,error}=await supabase.from("community_posts").select("id,user_id,novel_id,content,is_spoiler,created_at").order("created_at",{ascending:false}).limit(50);
   if(error) throw error;
   const posts=data??[];
   const userIds=Array.from(new Set(posts.map((p:any)=>p.user_id)));
@@ -262,7 +264,7 @@ export async function fetchCommunityPosts():Promise<CommunityPost[]> {
   const [profiles,novels,comments]=await Promise.all([
     userIds.length?supabase.from("profiles").select("id,display_name,username").in("id",userIds):Promise.resolve({data:[],error:null} as any),
     novelIds.length?supabase.from("novels").select("id,title").in("id",novelIds):Promise.resolve({data:[],error:null} as any),
-    posts.length?supabase.from("community_comments").select("id,post_id,user_id,content,created_at").in("post_id",posts.map((p:any)=>p.id)).order("created_at",{ascending:true}):Promise.resolve({data:[],error:null} as any),
+    posts.length?supabase.from("community_comments").select("id,post_id,user_id,content,is_spoiler,created_at").in("post_id",posts.map((p:any)=>p.id)).order("created_at",{ascending:true}):Promise.resolve({data:[],error:null} as any),
   ]);
   if(profiles.error) throw profiles.error;if(novels.error) throw novels.error;if(comments.error) throw comments.error;
   const profileMap=new Map((profiles.data??[]).map((p:any)=>[p.id,p.display_name||p.username||"Lumen Reader"]));
@@ -274,18 +276,76 @@ export async function fetchCommunityPosts():Promise<CommunityPost[]> {
   return posts.map((p:any)=>({...p,display_name:profileMap.get(p.user_id)||"Lumen Reader",novel_title:p.novel_id?novelMap.get(p.novel_id)||null:null,comments:commentMap.get(p.id)||[]})) as CommunityPost[];
 }
 
-export async function createCommunityPost(args:{userId:string;content:string;novelId?:string|null}) {
+export async function createCommunityPost(args:{userId:string;content:string;novelId?:string|null;isSpoiler?:boolean}) {
   if(!supabase) throw new Error("Supabase belum dikonfigurasi di environment aplikasi.");
   const text=args.content.trim();if(!text)throw new Error("Post tidak boleh kosong.");
-  const {error}=await supabase.from("community_posts").insert({user_id:args.userId,content:text.slice(0,4000),novel_id:args.novelId||null});
+  const {error}=await supabase.from("community_posts").insert({user_id:args.userId,content:text.slice(0,4000),novel_id:args.novelId||null,is_spoiler:Boolean(args.isSpoiler)});
   if(error)throw error;
 }
 
-export async function createCommunityComment(args:{userId:string;postId:string;content:string}) {
+export async function createCommunityComment(args:{userId:string;postId:string;content:string;isSpoiler?:boolean}) {
   if(!supabase) throw new Error("Supabase belum dikonfigurasi di environment aplikasi.");
   const text=args.content.trim();if(!text)throw new Error("Komentar tidak boleh kosong.");
-  const {error}=await supabase.from("community_comments").insert({post_id:args.postId,user_id:args.userId,content:text.slice(0,2000)});
+  const {error}=await supabase.from("community_comments").insert({post_id:args.postId,user_id:args.userId,content:text.slice(0,2000),is_spoiler:Boolean(args.isSpoiler)});
   if(error)throw error;
+}
+
+
+export type BookshelfStatus = "reading"|"plan_to_read"|"completed"|"dropped";
+export type BookshelfItem = { novel_id:string; status:BookshelfStatus; updated_at?:string };
+export type UserRating = { id:string; novel_id:string|null; volume_id:string|null; score:number; verified_reader:boolean; review:string|null };
+export type ReaderPreferences = { layout:"single"|"spread"|"scroll"; direction:"ltr"|"rtl"; theme:"light"|"sepia"|"dark"|"amoled" };
+export type SafeKnowledgeEntry = { kind:"character"|"glossary"; term:string; description:string; first_appearance_volume:number };
+
+export async function fetchUserBookshelf(userId:string):Promise<BookshelfItem[]> {
+  if(!supabase) return [];
+  const {data,error}=await (supabase as any).from("bookshelf_items").select("novel_id,status,updated_at").eq("user_id",userId);
+  if(error) throw error;
+  return (data??[]) as BookshelfItem[];
+}
+export async function saveBookshelfStatus(args:{userId:string;novelId:string;status:BookshelfStatus|null}) {
+  if(!supabase) throw new Error("Supabase belum dikonfigurasi di environment aplikasi.");
+  const table=(supabase as any).from("bookshelf_items");
+  if(!args.status){const {error}=await table.delete().eq("user_id",args.userId).eq("novel_id",args.novelId);if(error)throw error;return;}
+  const {error}=await table.upsert({user_id:args.userId,novel_id:args.novelId,status:args.status,updated_at:new Date().toISOString()},{onConflict:"user_id,novel_id"});
+  if(error) throw error;
+}
+export async function fetchUserRatings(userId:string):Promise<UserRating[]> {
+  if(!supabase) return [];
+  const {data,error}=await (supabase as any).from("ratings").select("id,novel_id,volume_id,score,verified_reader,review").eq("user_id",userId);
+  if(error) throw error;
+  return (data??[]) as UserRating[];
+}
+export async function saveUserRating(args:{userId:string;novelId?:string;volumeId?:string;score:number|null}) {
+  if(!supabase) throw new Error("Supabase belum dikonfigurasi di environment aplikasi.");
+  if(Boolean(args.novelId)===Boolean(args.volumeId)) throw new Error("Pilih satu target rating: seri atau volume.");
+  if(args.score!==null&&(!Number.isInteger(args.score)||args.score<1||args.score>10)) throw new Error("Rating harus 1–10.");
+  const table=(supabase as any).from("ratings");
+  let query=table.select("id").eq("user_id",args.userId);
+  query=args.novelId?query.eq("novel_id",args.novelId).is("volume_id",null):query.eq("volume_id",args.volumeId).is("novel_id",null);
+  const {data:existing,error:findError}=await query.maybeSingle();
+  if(findError) throw findError;
+  if(args.score===null){if(existing?.id){const {error}=await table.delete().eq("id",existing.id);if(error)throw error;}return;}
+  const values={user_id:args.userId,novel_id:args.novelId??null,volume_id:args.volumeId??null,score:args.score,updated_at:new Date().toISOString()};
+  const {error}=existing?.id?await table.update(values).eq("id",existing.id):await table.insert(values);
+  if(error) throw error;
+}
+export async function fetchReaderPreferences(userId:string):Promise<ReaderPreferences|null> {
+  if(!supabase) return null;
+  const {data,error}=await (supabase as any).from("profiles").select("reader_preferences").eq("id",userId).maybeSingle();
+  if(error) throw error;
+  return (data?.reader_preferences??null) as ReaderPreferences|null;
+}
+export async function saveReaderPreferences(userId:string,prefs:ReaderPreferences) {
+  if(!supabase) return;
+  const {error}=await (supabase as any).from("profiles").update({reader_preferences:prefs,updated_at:new Date().toISOString()}).eq("id",userId);
+  if(error) throw error;
+}
+export async function fetchSafeVolumeKnowledge(volumeId:string):Promise<SafeKnowledgeEntry[]> {
+  if(!supabase) return [];
+  const {data,error}=await (supabase as any).rpc("get_safe_volume_knowledge",{p_volume_id:volumeId});
+  if(error) throw error;
+  return (data??[]) as SafeKnowledgeEntry[];
 }
 
 export async function fetchCatalog(): Promise<CatalogBook[]> {

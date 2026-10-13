@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
-import { fetchCatalog, fetchAdminCatalog, fetchUserBookmarks, fetchUserProgress, saveReadingProgress, signIn, signUp, signOut, toggleBookmark, semanticSearch, startProcessingJob, uploadVolumePdf, createNovel, createVolume, updateNovelMetadata, updateVolumeMetadata, uploadNovelCover, updateChapterReview, fetchCurrentUserRole, fetchLatestProcessingJob, fetchProcessingStages, fetchProcessingLogs, fetchVolumeReview, publishVolume, getPublishedPdfUrl, fetchCommunityPosts, createCommunityPost, createCommunityComment, type CatalogBook, type UserBookmark, type SemanticSearchResult, type ProcessingJob, type ProcessingStage, type ProcessingLog, type VolumeReview, type CommunityPost } from "./lib/lumen";
+import { fetchCatalog, fetchAdminCatalog, fetchUserBookmarks, fetchUserProgress, saveReadingProgress, signIn, signUp, signOut, toggleBookmark, semanticSearch, startProcessingJob, uploadVolumePdf, createNovel, createVolume, updateNovelMetadata, updateVolumeMetadata, uploadNovelCover, updateChapterReview, fetchCurrentUserRole, fetchLatestProcessingJob, fetchProcessingStages, fetchProcessingLogs, fetchVolumeReview, publishVolume, getPublishedPdfUrl, fetchCommunityPosts, createCommunityPost, createCommunityComment, fetchUserBookshelf, saveBookshelfStatus, fetchUserRatings, saveUserRating, fetchReaderPreferences, saveReaderPreferences, fetchSafeVolumeKnowledge, type SafeKnowledgeEntry, type ReaderPreferences, type BookshelfItem, type BookshelfStatus, type UserRating, type CatalogBook, type UserBookmark, type SemanticSearchResult, type ProcessingJob, type ProcessingStage, type ProcessingLog, type VolumeReview, type CommunityPost } from "./lib/lumen";
 import { supabase } from "./lib/supabase";
 
 type View = "home" | "search" | "reader" | "admin" | "library" | "community";
@@ -222,6 +222,10 @@ function SearchView({ setView, user, onAuth, onRead }: { setView: (view: View) =
 }
 function Reader({setView,user,onAuth,syncVolumeId,syncChapterId,volume,chapter,onSelectChapter}:{setView:(view:View)=>void;user:User|null;onAuth:()=>void;syncVolumeId:string|null;syncChapterId:string|null;volume:CatalogBook["volumes"][number]|undefined;chapter:CatalogBook["volumes"][number]["chapters"][number]|undefined;onSelectChapter:(chapterId:string)=>void}){
   const [theme,setTheme]=useState<"light"|"sepia"|"dark"|"amoled">("sepia");
+  const [layoutMode,setLayoutMode]=useState<"single"|"spread"|"scroll">("single");
+  const [direction,setDirection]=useState<"ltr"|"rtl">("ltr");
+  const [settingsOpen,setSettingsOpen]=useState(false); const [prefsLoaded,setPrefsLoaded]=useState(false);
+  const [knowledge,setKnowledge]=useState<SafeKnowledgeEntry[]>([]); const [knowledgeLoading,setKnowledgeLoading]=useState(false);
   const [panel,setPanel]=useState<"toc"|"info"|null>("info");
   const [saved,setSaved]=useState(false);
   const [pageNumber,setPageNumber]=useState(chapter?.start_page??1);
@@ -236,6 +240,46 @@ function Reader({setView,user,onAuth,syncVolumeId,syncChapterId,volume,chapter,o
   const fallbackTitle=chapter?.title??"Chapter"; const chapterNumber=chapter?.chapter_number??1;
   useEffect(()=>{let active=true;setReaderMode("text");setOriginalPdfUrl("");setPdfMessage("");if(!syncChapterId){setPages([]);return()=>{active=false;};}setPageLoading(true);import("./lib/lumen").then(({fetchChapterPages})=>fetchChapterPages(syncChapterId).then((items)=>{if(active){setPages(items);const first=items[0]?.page_number;if(first&&pageNumber<first)setPageNumber(first);}}).catch(()=>{if(active)setPages([]);}).finally(()=>{if(active)setPageLoading(false);}));return()=>{active=false;};},[syncChapterId]);
   useEffect(()=>{if(!user||!syncVolumeId)return;import("./lib/lumen").then(({fetchUserBookmarks,fetchUserProgress})=>{fetchUserBookmarks(user.id).then((items)=>setSaved(items.some((item)=>item.volume_id===syncVolumeId&&item.page_number===pageNumber))).catch(()=>undefined);fetchUserProgress(user.id).then((items)=>{const item=items.find((p)=>p.volume_id===syncVolumeId);if(item?.page_number)setPageNumber(item.page_number);}).catch(()=>undefined);});},[user,syncVolumeId]);
+  useEffect(()=>{
+    let active=true;setPrefsLoaded(false);
+    async function loadPreferences(){
+      try{
+        const local=window.localStorage.getItem("lumen-reader-preferences");
+        if(local){
+          const p=JSON.parse(local) as Partial<ReaderPreferences>;
+          if(p.layout==="single"||p.layout==="spread"||p.layout==="scroll")setLayoutMode(p.layout);
+          if(p.direction==="ltr"||p.direction==="rtl")setDirection(p.direction);
+          if(p.theme==="light"||p.theme==="sepia"||p.theme==="dark"||p.theme==="amoled")setTheme(p.theme);
+        }
+      }catch{}
+      if(user){
+        try{
+          const remote=await fetchReaderPreferences(user.id);
+          if(active&&remote){
+            if(remote.layout==="single"||remote.layout==="spread"||remote.layout==="scroll")setLayoutMode(remote.layout);
+            if(remote.direction==="ltr"||remote.direction==="rtl")setDirection(remote.direction);
+            if(remote.theme==="light"||remote.theme==="sepia"||remote.theme==="dark"||remote.theme==="amoled")setTheme(remote.theme);
+          }
+        }catch{}
+      }
+      if(active)setPrefsLoaded(true);
+    }
+    void loadPreferences();
+    return ()=>{active=false;};
+  },[user?.id]);
+  useEffect(()=>{
+    if(!prefsLoaded)return;
+    const prefs:ReaderPreferences={layout:layoutMode,direction,theme};
+    try{window.localStorage.setItem("lumen-reader-preferences",JSON.stringify(prefs));}catch{}
+    if(user)void saveReaderPreferences(user.id,prefs).catch(()=>undefined);
+  },[prefsLoaded,user?.id,layoutMode,direction,theme]);
+  useEffect(()=>{
+    let active=true;setKnowledge([]);setKnowledgeLoading(Boolean(syncVolumeId));
+    if(!syncVolumeId){setKnowledgeLoading(false);return()=>{active=false;};}
+    void fetchSafeVolumeKnowledge(syncVolumeId).then((items)=>{if(active)setKnowledge(items);}).catch(()=>{if(active)setKnowledge([]);}).finally(()=>{if(active)setKnowledgeLoading(false);});
+    return()=>{active=false;};
+  },[syncVolumeId]);
+
   async function persistProgress(nextPage:number){if(!user||!syncVolumeId)return;const pct=Math.max(0,Math.min(100,(nextPage/pageCount)*100));const {saveReadingProgress}=await import("./lib/lumen");try{await saveReadingProgress({user,volumeId:syncVolumeId,chapterId:syncChapterId,pageNumber:nextPage,progressPercent:pct});}catch(error){console.debug(error);}}
   function goToPage(nextPage:number){const next=Math.max(1,Math.min(pageCount,nextPage));setPageNumber(next);void persistProgress(next);}
   async function handleBookmark(){if(!user){onAuth();return;}if(!syncVolumeId)return;const {toggleBookmark}=await import("./lib/lumen");try{setSaved(await toggleBookmark({user,volumeId:syncVolumeId,chapterId:syncChapterId,pageNumber}));}catch{}}
@@ -245,15 +289,16 @@ function Reader({setView,user,onAuth,syncVolumeId,syncChapterId,volume,chapter,o
     <header className="reader-top"><Button variant="icon" icon="close" label="Close reader" onClick={()=>setView("home")}/><div className="reader-title"><strong>{volume?((volume.title??("Volume "+volume.volume_number))+" — "+(volume.subtitle??"")):"Lumen Reader"}</strong><small>{"Chapter "+chapterNumber+" · "+fallbackTitle}</small></div><div className="reader-tools"><button type="button" className={"reader-mode-btn "+(readerMode==="text"?"active":"")} onClick={()=>setReaderMode("text")}>Text</button><button type="button" className={"reader-mode-btn "+(readerMode==="pdf"?"active":"")} onClick={()=>void openPdf()} disabled={pdfLoading}>{pdfLoading?"PDF…":"Original PDF"}</button><Button variant="icon" icon="search" label="Search in book" onClick={()=>setView("search")}/><Button variant="icon" icon="list" label="Table of contents" onClick={()=>setPanel(panel==="toc"?null:"toc")}/><Button variant="icon" icon="panel" label="Knowledge panel" onClick={()=>setPanel(panel==="info"?null:"info")}/><Button variant="icon" icon={saved?"check":"bookmark"} label="Bookmark" onClick={handleBookmark}/></div></header>
     <div className="reader-progress"><i style={{width:(Math.round((pageNumber/pageCount)*100)+"%")}}></i></div>
     <div className="reader-shell"><aside className="reader-rail"><Button variant="icon" icon="chevron" label="Previous page" onClick={()=>goToPage(pageNumber-1)}/><span>{pageNumber}</span><div className="vertical-track"><i style={{height:(Math.min(100,(pageNumber/pageCount)*100)+"%")}}></i></div><span>{pageCount}</span><Button variant="icon" icon="chevron" label="Next page" onClick={()=>goToPage(pageNumber+1)}/></aside>
-      <article className="reading-page"><div className="chapter-mark"><span>CHAPTER {String(chapterNumber).padStart(2,"0")}</span><i></i></div><h1>{fallbackTitle}</h1>
-        {readerMode==="pdf"&&originalPdfUrl?<div className="original-pdf-frame"><iframe title="Original PDF" src={originalPdfUrl}/></div>:<>{pageLoading&&<div className="reader-inline-status">Loading extracted page…</div>}{!pageLoading&&paragraphs.length===0&&<div className="reader-inline-status"><strong>{"Page "+pageNumber+" has not been extracted yet."}</strong><span>The PDF processing pipeline needs to finish this page before Lumen can display its text.</span></div>}{paragraphs.map((paragraph,index)=><p className={index===0?"dropcap":""} key={pageNumber+"-"+index}>{paragraph}</p>)}<div className="scene-break">✦</div></>}
+      <article className={"reading-page layout-"+layoutMode} dir={direction}><div className="chapter-mark"><span>CHAPTER {String(chapterNumber).padStart(2,"0")}</span><i></i></div><h1>{fallbackTitle}</h1>
+        {readerMode==="pdf"&&originalPdfUrl?<div className="original-pdf-frame"><iframe title="Original PDF" src={originalPdfUrl}/></div>:<>{pageLoading&&<div className="reader-inline-status">Loading extracted page…</div>}{!pageLoading&&paragraphs.length===0&&<div className="reader-inline-status"><strong>{"Page "+pageNumber+" has not been extracted yet."}</strong><span>The PDF processing pipeline needs to finish this page before Lumen can display its text.</span></div>}{layoutMode==="scroll"?pages.filter((p)=>p.page_number>=pageNumber).map((p)=><section className="scroll-reader-page" key={p.page_number}><div className="scroll-page-number">{p.page_number}</div>{(p.content??"").split(/\n\s*\n|\n/).map((paragraph,index)=>paragraph.trim()?<p className={index===0?"dropcap":""} key={p.page_number+"-"+index}>{paragraph.trim()}</p>:null)}</section>):layoutMode==="spread"?<div className="spread-reader-pages"><section>{paragraphs.map((paragraph,index)=><p className={index===0?"dropcap":""} key={pageNumber+"-"+index}>{paragraph}</p>)}</section><section>{(pages.find((p)=>p.page_number===pageNumber+1)?.content??"").split(/\n\s*\n|\n/).map((paragraph,index)=>paragraph.trim()?<p key={(pageNumber+1)+"-"+index}>{paragraph.trim()}</p>:null)}</section></div>:paragraphs.map((paragraph,index)=><p className={index===0?"dropcap":""} key={pageNumber+"-"+index}>{paragraph}</p>)}<div className="scene-break">✦</div></>}
         {volume?.attribution_text&&<div className="volume-attribution">Translation credit: {volume.attribution_text}</div>}
         <footer><span>{volume?.title??"LUMEN"}</span><b>{"— "+pageNumber+" —"}</b><span>{"VOLUME "+(volume?.volume_number??"")}</span></footer>
       </article>
-      {panel&&<aside className="knowledge-panel"><div className="panel-tabs"><button type="button" className={panel==="info"?"active":""} onClick={()=>setPanel("info")}>Knowledge</button><button type="button" className={panel==="toc"?"active":""} onClick={()=>setPanel("toc")}>Contents</button></div>{panel==="info"?<div className="reader-context-empty"><div className="safe-badge"><Icon name="eye" size={15}/> Safe for current volume</div><h2>In this scene</h2><p>Character and glossary extraction is surfaced from the processed volume when available.</p><div className="glossary"><strong>Chapter summary</strong><p>{chapter?.spoiler_safe_summary??"No spoiler-safe summary has been generated yet."}</p></div></div>:<><h2>Table of contents</h2>{(volume?.chapters??[]).map((item)=><button type="button" className={item.id===syncChapterId?"chapter-link active":"chapter-link"} key={item.id} onClick={()=>onSelectChapter(item.id)}><span>{String(item.chapter_number).padStart(2,"0")}</span>{item.title}{item.id===syncChapterId&&<Icon name="check" size={15}/>}</button>)}</>}</aside>}
+      {panel&&<aside className="knowledge-panel"><div className="panel-tabs"><button type="button" className={panel==="info"?"active":""} onClick={()=>setPanel("info")}>Knowledge</button><button type="button" className={panel==="toc"?"active":""} onClick={()=>setPanel("toc")}>Contents</button></div>{panel==="info"?<div className="reader-context-empty"><div className="safe-badge"><Icon name="eye" size={15}/> Safe for current volume</div><h2>In this scene</h2><p>Only spoiler-safe entries first appearing by this volume are shown.</p><div className="glossary"><strong>Chapter summary</strong><p>{chapter?.spoiler_safe_summary??"No spoiler-safe summary has been generated yet."}</p></div>{knowledgeLoading&&<p>Loading safe glossary…</p>}{(["character","glossary"] as const).map((kind)=><section className="safe-knowledge-group" key={kind}><strong>{kind==="character"?"Characters":"Glossary"}</strong>{knowledge.filter((item)=>item.kind===kind).map((item)=><div className="safe-knowledge-entry" key={kind+"-"+item.term}><b>{item.term}</b><p>{item.description}</p></div>)}{!knowledgeLoading&&!knowledge.some((item)=>item.kind===kind)&&<small>No safe entries yet.</small>}</section>)}</div>:<><h2>Table of contents</h2>{(volume?.chapters??[]).map((item)=><button type="button" className={item.id===syncChapterId?"chapter-link active":"chapter-link"} key={item.id} onClick={()=>onSelectChapter(item.id)}><span>{String(item.chapter_number).padStart(2,"0")}</span>{item.title}{item.id===syncChapterId&&<Icon name="check" size={15}/>}</button>)}</>}</aside>}
     </div>
     {pdfMessage&&<div className="toast"><Icon name="close"/><div><strong>PDF unavailable</strong><small>{pdfMessage}</small></div></div>}
-    <div className="reader-bottom"><div className="themes">{(["light","sepia","dark","amoled"] as const).map((t)=><button type="button" aria-label={t+" reading theme"} className={t+" "+(theme===t?"active":"")} key={t} onClick={()=>setTheme(t)}></button>)}</div><div className="page-nav"><Button variant="ghost" onClick={()=>goToPage(pageNumber-1)}>Previous</Button><span>{Math.round((pageNumber/pageCount)*100)}% · {Math.max(0,pageCount-pageNumber)} pages left</span><Button variant="primary" onClick={()=>goToPage(pageNumber+1)}>Next page <Icon name="arrow"/></Button></div><Button variant="ghost" icon="settings">Reading settings</Button></div>
+    {settingsOpen&&<div className="reader-settings-panel"><div><strong>Page layout</strong><div className="reader-pref-options"><button className={layoutMode==="single"?"active":""} onClick={()=>setLayoutMode("single")}>Single page</button><button className={layoutMode==="spread"?"active":""} onClick={()=>setLayoutMode("spread")}>Two-page spread</button><button className={layoutMode==="scroll"?"active":""} onClick={()=>setLayoutMode("scroll")}>Continuous scroll</button></div></div><div><strong>Reading direction</strong><div className="reader-pref-options"><button className={direction==="ltr"?"active":""} onClick={()=>setDirection("ltr")}>Left to right</button><button className={direction==="rtl"?"active":""} onClick={()=>setDirection("rtl")}>Right to left</button></div></div><p>Theme, layout and direction are saved to this device and to your reader account when signed in.</p></div>}
+    <div className="reader-bottom"><div className="themes">{(["light","sepia","dark","amoled"] as const).map((t)=><button type="button" aria-label={t+" reading theme"} className={t+" "+(theme===t?"active":"")} key={t} onClick={()=>setTheme(t)}></button>)}</div><div className="page-nav"><Button variant="ghost" onClick={()=>goToPage(pageNumber-1)}>Previous</Button><span>{Math.round((pageNumber/pageCount)*100)}% · {Math.max(0,pageCount-pageNumber)} pages left</span><Button variant="primary" onClick={()=>goToPage(pageNumber+1)}>Next page <Icon name="arrow"/></Button></div><Button variant="ghost" icon="settings" onClick={()=>setSettingsOpen((open)=>!open)}>Reading settings</Button></div>
     {saved&&<div className="toast"><Icon name="check"/><div><strong>Bookmark added</strong><small>{"Page "+pageNumber+" · Chapter "+chapterNumber}</small></div></div>}
   </div>;
 }
@@ -414,24 +459,72 @@ function AdminView({catalog,user,onAuth,onCatalogChanged}:{catalog:CatalogBook[]
 }
 
 function LibraryView({ user, progress, bookmarks, onAuth, catalog, onRead }: { user: User | null; progress: Map<string, number>; bookmarks: UserBookmark[]; onAuth: () => void; catalog: CatalogBook[]; onRead: (target: { volumeId: string; chapterId: string | null }) => void }) {
-  if (!user) return <main className="page"><section className="empty-state"><div className="library-icon">◫</div><h1>Your library</h1><p>Sign in to sync reading progress and bookmarks across devices.</p><Button onClick={onAuth}>Sign in to continue</Button></section></main>;
-  const tracked = catalog.filter((book) => book.volumes.some((volume) => progress.has(volume.id)));
-  const displayBooks = tracked.map((book) => ({
-    book,
-    volume: book.volumes.find((volume) => progress.has(volume.id)) ?? book.volumes.at(-1),
-    display: books.find((item) => item.novelSlug === book.slug),
-  })).filter((item) => item.display && item.volume);
-  return <main className="page library-page"><div className="search-intro"><span className="hero-kicker dark">YOUR LIBRARY</span><h1>Everything you’re reading.</h1><p>Your reading activity is synced with your Lumen account.</p></div><section><div className="section-heading"><div><span>YOUR TITLES</span><h2>Recent library</h2></div></div>{displayBooks.length ? <div className="book-grid">{displayBooks.map(({book,volume,display}) => <article className="book-card" key={book.id} onClick={()=>onRead({volumeId:volume!.id, chapterId:volume!.chapters[0]?.id ?? null})}><div className="cover-wrap"><img src={display!.image} alt={`Cover of ${book.title}`} /><span className="cover-volume">Vol. {volume!.volume_number}</span></div><div className="book-meta"><div className="rating"><Icon name="star" size={14}/>{display!.rating}</div><span>{book.genres[0] ?? "Novel"}</span></div><h3>{book.title}</h3><p>{book.alternate_title ?? ""}</p><small>{book.author ?? "Unknown author"} · {Math.round(progress.get(volume!.id) ?? 0)}% synced</small></article>)}</div> : <div className="result-placeholder"><Icon name="library"/><strong>Your library is empty.</strong><p>Open a story and start reading; it will appear here automatically after progress sync.</p></div>}</section><section className="library-stats"><div><span>Bookmarks</span><strong>{bookmarks.length}</strong></div><div><span>Synced titles</span><strong>{displayBooks.length}</strong></div><div><span>Cloud sync</span><strong>Live</strong></div></section></main>;
+  const [shelf,setShelf]=useState<BookshelfItem[]>([]);
+  const [ratings,setRatings]=useState<UserRating[]>([]);
+  const [message,setMessage]=useState("");
+  const [saving,setSaving]=useState("");
+  async function refreshPersonalData(){
+    if(!user){setShelf([]);setRatings([]);return;}
+    try{const [s,r]=await Promise.all([fetchUserBookshelf(user.id),fetchUserRatings(user.id)]);setShelf(s);setRatings(r);}
+    catch(error){setMessage(error instanceof Error?error.message:"Could not load your personal library.");}
+  }
+  useEffect(()=>{void refreshPersonalData();},[user?.id]);
+  if (!user) return <main className="page"><section className="empty-state"><div className="library-icon">◫</div><h1>Your library</h1><p>Sign in to keep reading progress, shelf status, and ratings synced across devices.</p><Button onClick={onAuth}>Sign in to continue</Button></section></main>;
+  const displayBooks=catalog.map((book)=>{
+    const volume=book.volumes.find((v)=>progress.has(v.id))??book.volumes.at(-1);
+    const display=books.find((item)=>item.novelSlug===book.slug);
+    return {book,volume,display,status:shelf.find((s)=>s.novel_id===book.id)?.status??""};
+  }).filter((item)=>item.display&&item.volume);
+  async function changeShelf(novelId:string,value:string){
+    setSaving("shelf:"+novelId);setMessage("");
+    try{await saveBookshelfStatus({userId:user.id,novelId,status:(value||null) as BookshelfStatus|null});await refreshPersonalData();}
+    catch(error){setMessage(error instanceof Error?error.message:"Could not update shelf status.");}
+    finally{setSaving("");}
+  }
+  async function changeRating(key:string,novelId:string,volumeId:string,value:string){
+    setSaving("rating:"+key);setMessage("");
+    try{await saveUserRating({userId:user.id,...(key==="series"?{novelId}:{volumeId}),score:value?Number(value):null});await refreshPersonalData();}
+    catch(error){setMessage(error instanceof Error?error.message:"Could not save your rating.");}
+    finally{setSaving("");}
+  }
+  return <main className="page library-page">
+    <div className="search-intro"><span className="hero-kicker dark">YOUR LIBRARY</span><h1>Your shelf, your pace.</h1><p>Track series, sync progress, and rate both a series and an individual volume.</p></div>
+    {message&&<div className="upload-message">{message}</div>}
+    <section><div className="section-heading"><div><span>YOUR TITLES</span><h2>Light novel shelf</h2></div></div>
+      {displayBooks.length?<div className="book-grid">{displayBooks.map(({book,volume,display,status})=>{
+        const seriesRating=ratings.find((r)=>r.novel_id===book.id&&r.volume_id===null)?.score??"";
+        const volumeRating=ratings.find((r)=>r.volume_id===volume!.id)?.score??"";
+        return <article className="book-card library-book-card" key={book.id} onClick={()=>onRead({volumeId:volume!.id,chapterId:volume!.chapters[0]?.id??null})}>
+          <div className="cover-wrap"><img src={display!.image} alt={"Cover of "+book.title}/><span className="cover-volume">Vol. {volume!.volume_number}</span></div>
+          <div className="book-meta"><div className="rating"><Icon name="star" size={14}/>{book.rating_avg?Number(book.rating_avg).toFixed(1):display!.rating}</div><span>{book.genres[0]??"Novel"}</span></div>
+          <h3>{book.title}</h3><p>{book.alternate_title??""}</p><small>{book.author??"Unknown author"} · {Math.round(progress.get(volume!.id)??0)}% read</small>
+          <div className="library-controls" onClick={e=>e.stopPropagation()}>
+            <label>Shelf status<select value={status} disabled={saving==="shelf:"+book.id} onChange={e=>void changeShelf(book.id,e.target.value)}>
+              <option value="">Not on shelf</option><option value="reading">Reading</option><option value="plan_to_read">Plan to Read</option><option value="completed">Completed</option><option value="dropped">Dropped</option>
+            </select></label>
+            <label>Series rating<select value={seriesRating} disabled={saving==="rating:series"} onChange={e=>void changeRating("series",book.id,volume!.id,e.target.value)}>
+              <option value="">Not rated</option>{Array.from({length:10},(_,i)=>i+1).map(score=><option key={score} value={score}>{score}/10</option>)}
+            </select></label>
+            <label>{"Vol. "+volume!.volume_number+" rating"}<select value={volumeRating} disabled={saving==="rating:volume:"+volume!.id} onChange={e=>void changeRating("volume:"+volume!.id,book.id,volume!.id,e.target.value)}>
+              <option value="">Not rated</option>{Array.from({length:10},(_,i)=>i+1).map(score=><option key={score} value={score}>{score}/10</option>)}
+            </select></label>
+          </div>
+        </article>;
+      })}</div>:<div className="result-placeholder"><Icon name="library"/><strong>Your catalog is empty.</strong><p>Once Supabase is connected and titles are published, add series to your shelf here.</p></div>}
+    </section>
+    <section className="library-stats"><div><span>Bookmarks</span><strong>{bookmarks.length}</strong></div><div><span>Shelf titles</span><strong>{shelf.length}</strong></div><div><span>Synced titles</span><strong>{displayBooks.filter(({volume})=>progress.has(volume!.id)).length}</strong></div></section>
+  </main>;
 }
+
 function CommunityView({user,onAuth}:{user:User|null;onAuth:()=>void}){
-  const [posts,setPosts]=useState<CommunityPost[]>([]); const [content,setContent]=useState(""); const [loading,setLoading]=useState(true); const [message,setMessage]=useState(""); const [commentDrafts,setCommentDrafts]=useState<Record<string,string>>({});
+  const [posts,setPosts]=useState<CommunityPost[]>([]); const [content,setContent]=useState(""); const [isSpoiler,setIsSpoiler]=useState(false); const [revealed,setRevealed]=useState<Record<string,boolean>>({}); const [spoilerComments,setSpoilerComments]=useState<Record<string,boolean>>({}); const [loading,setLoading]=useState(true); const [message,setMessage]=useState(""); const [commentDrafts,setCommentDrafts]=useState<Record<string,string>>({});
   async function refresh(){setLoading(true);try{setPosts(await fetchCommunityPosts());}catch(error){setMessage(error instanceof Error?error.message:"Community feed failed.");}finally{setLoading(false);}}
   useEffect(()=>{void refresh();},[]);
-  async function submitPost(){if(!user){onAuth();return;}if(!content.trim())return;try{await createCommunityPost({userId:user.id,content});setContent("");await refresh();}catch(error){setMessage(error instanceof Error?error.message:"Could not publish post.");}}
-  async function submitComment(postId:string){if(!user){onAuth();return;}const text=commentDrafts[postId]?.trim();if(!text)return;try{await createCommunityComment({userId:user.id,postId,content:text});setCommentDrafts(prev=>({...prev,[postId]:""}));await refresh();}catch(error){setMessage(error instanceof Error?error.message:"Could not add comment.");}}
+  async function submitPost(){if(!user){onAuth();return;}if(!content.trim())return;try{await createCommunityPost({userId:user.id,content,isSpoiler});setContent("");setIsSpoiler(false);await refresh();}catch(error){setMessage(error instanceof Error?error.message:"Could not publish post.");}}
+  async function submitComment(postId:string){if(!user){onAuth();return;}const text=commentDrafts[postId]?.trim();if(!text)return;try{await createCommunityComment({userId:user.id,postId,content:text,isSpoiler:spoilerComments[postId]});setCommentDrafts(prev=>({...prev,[postId]:""}));setSpoilerComments(prev=>({...prev,[postId]:false}));await refresh();}catch(error){setMessage(error instanceof Error?error.message:"Could not add comment.");}}
   return <main className="page community-page"><div className="search-intro"><span className="hero-kicker dark"><Icon name="users" size={16}/> COMMUNITY</span><h1>Talk about the worlds you’re reading.</h1><p>Discuss chapters, characters, theories, and favorite moments.</p></div>
-    <section className="community-compose"><div className="avatar">{user?((user.user_metadata?.full_name as string|undefined)?.slice(0,2).toUpperCase()||"LR"):"LR"}</div><div><textarea rows={3} value={content} onChange={e=>setContent(e.target.value)} onFocus={()=>{if(!user)onAuth();}} placeholder={user?"Share a spoiler-safe thought…":"Sign in to start a discussion."}/><div className="community-compose-footer"><small>{content.length}/4000</small><Button onClick={()=>void submitPost()} disabled={!content.trim()}>Post</Button></div></div></section>
-    {message&&<div className="upload-message">{message}</div>}{loading?<div className="result-placeholder"><Icon name="clock"/><strong>Loading community…</strong></div>:<section className="community-feed">{posts.length?posts.map(post=><article className="community-post" key={post.id}><div className="community-post-head"><span className="avatar">{post.display_name.slice(0,2).toUpperCase()}</span><div><strong>{post.display_name}</strong><small>{new Date(post.created_at).toLocaleString()}{post.novel_title?" · "+post.novel_title:""}</small></div></div><p>{post.content}</p><div className="community-comments">{post.comments.map(comment=><div className="community-comment" key={comment.id}><strong>{comment.display_name}</strong><span>{comment.content}</span></div>)}</div><div className="community-comment-box"><input value={commentDrafts[post.id]??""} onChange={e=>setCommentDrafts(prev=>({...prev,[post.id]:e.target.value}))} onFocus={()=>{if(!user)onAuth();}} placeholder={user?"Write a comment…":"Sign in to comment"}/><Button variant="secondary" onClick={()=>void submitComment(post.id)} disabled={!commentDrafts[post.id]?.trim()}>Reply</Button></div></article>):<div className="result-placeholder"><Icon name="users"/><strong>No discussions yet.</strong><p>Be the first reader to start a conversation.</p></div>}</section>}
+    <section className="community-compose"><div className="avatar">{user?((user.user_metadata?.full_name as string|undefined)?.slice(0,2).toUpperCase()||"LR"):"LR"}</div><div><textarea rows={3} value={content} onChange={e=>setContent(e.target.value)} onFocus={()=>{if(!user)onAuth();}} placeholder={user?"Share a spoiler-safe thought…":"Sign in to start a discussion."}/><div className="community-compose-footer"><small>{content.length}/4000</small><label className="spoiler-toggle"><input type="checkbox" checked={isSpoiler} onChange={e=>setIsSpoiler(e.target.checked)}/> Contains spoilers</label><Button onClick={()=>void submitPost()} disabled={!content.trim()}>Post</Button></div></div></section>
+    {message&&<div className="upload-message">{message}</div>}{loading?<div className="result-placeholder"><Icon name="clock"/><strong>Loading community…</strong></div>:<section className="community-feed">{posts.length?posts.map(post=><article className="community-post" key={post.id}><div className="community-post-head"><span className="avatar">{post.display_name.slice(0,2).toUpperCase()}</span><div><strong>{post.display_name}</strong><small>{new Date(post.created_at).toLocaleString()}{post.novel_title?" · "+post.novel_title:""}</small></div></div><div className="community-post-content">{post.is_spoiler&&!revealed[post.id]?<button type="button" className="spoiler-content" onClick={()=>setRevealed(prev=>({...prev,[post.id]:true}))}>Spoiler hidden · click to reveal</button>:<p>{post.content}</p>}</div><div className="community-comments">{post.comments.map(comment=><div className="community-comment" key={comment.id}><strong>{comment.display_name}</strong>{comment.is_spoiler&&!revealed[comment.id]?<button type="button" className="spoiler-content" onClick={()=>setRevealed(prev=>({...prev,[comment.id]:true}))}>Spoiler hidden · click to reveal</button>:<span>{comment.content}</span>}</div>)}</div><div className="community-comment-box"><input value={commentDrafts[post.id]??""} onChange={e=>setCommentDrafts(prev=>({...prev,[post.id]:e.target.value}))} onFocus={()=>{if(!user)onAuth();}} placeholder={user?"Write a comment…":"Sign in to comment"}/><label className="spoiler-toggle"><input type="checkbox" checked={Boolean(spoilerComments[post.id])} onChange={e=>setSpoilerComments(prev=>({...prev,[post.id]:e.target.checked}))}/> Spoiler</label><Button variant="secondary" onClick={()=>void submitComment(post.id)} disabled={!commentDrafts[post.id]?.trim()}>Reply</Button></div></article>):<div className="result-placeholder"><Icon name="users"/><strong>No discussions yet.</strong><p>Be the first reader to start a conversation.</p></div>}</section>}
   </main>;
 }
 
