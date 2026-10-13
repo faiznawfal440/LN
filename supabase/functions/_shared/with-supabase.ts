@@ -29,7 +29,7 @@ export function withSupabase(
     const supabaseAdmin = createClient(url, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
     });
-    const tokenMatch = (req.headers.get("authorization") ?? "").match(/^Bearer\\s+(.+)$/i);
+    const tokenMatch = (req.headers.get("authorization") ?? "").match(/^Bearer\s+(.+)$/i);
     const token = tokenMatch ? tokenMatch[1] : null;
     const supabaseUser = createClient(url, anonKey, {
       global: token ? { headers: { Authorization: "Bearer " + token } } : {},
