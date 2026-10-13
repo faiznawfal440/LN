@@ -291,6 +291,7 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          is_spoiler: boolean
           post_id: string
           updated_at: string
           user_id: string
@@ -299,6 +300,7 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          is_spoiler?: boolean
           post_id: string
           updated_at?: string
           user_id: string
@@ -307,6 +309,7 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          is_spoiler?: boolean
           post_id?: string
           updated_at?: string
           user_id?: string
@@ -326,6 +329,7 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          is_spoiler: boolean
           novel_id: string | null
           updated_at: string
           user_id: string
@@ -334,6 +338,7 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          is_spoiler?: boolean
           novel_id?: string | null
           updated_at?: string
           user_id: string
@@ -342,6 +347,7 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          is_spoiler?: boolean
           novel_id?: string | null
           updated_at?: string
           user_id?: string
@@ -600,6 +606,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          reader_preferences: Json
           avatar_url: string | null
           bio: string | null
           created_at: string
@@ -609,6 +616,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          reader_preferences?: Json
           avatar_url?: string | null
           bio?: string | null
           created_at?: string
@@ -618,6 +626,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          reader_preferences?: Json
           avatar_url?: string | null
           bio?: string | null
           created_at?: string
@@ -678,6 +687,9 @@ export type Database = {
       }
       volumes: {
         Row: {
+          attribution_text: string | null
+          rating_avg: number | null
+          rating_count: number
           created_at: string
           description: string | null
           id: string
@@ -694,6 +706,9 @@ export type Database = {
           volume_number: number
         }
         Insert: {
+          attribution_text?: string | null
+          rating_avg?: number | null
+          rating_count?: number
           created_at?: string
           description?: string | null
           id?: string
@@ -710,6 +725,9 @@ export type Database = {
           volume_number: number
         }
         Update: {
+          attribution_text?: string | null
+          rating_avg?: number | null
+          rating_count?: number
           created_at?: string
           description?: string | null
           id?: string

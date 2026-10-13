@@ -506,13 +506,13 @@ function LibraryView({ user, progress, bookmarks, onAuth, catalog, onRead }: { u
   }).filter((item)=>item.display&&item.volume);
   async function changeShelf(novelId:string,value:string){
     setSaving("shelf:"+novelId);setMessage("");
-    try{await saveBookshelfStatus({userId:user.id,novelId,status:(value||null) as BookshelfStatus|null});await refreshPersonalData();}
+    try{await saveBookshelfStatus({userId:user!.id,novelId,status:(value||null) as BookshelfStatus|null});await refreshPersonalData();}
     catch(error){setMessage(error instanceof Error?error.message:"Could not update shelf status.");}
     finally{setSaving("");}
   }
   async function changeRating(key:string,novelId:string,volumeId:string,value:string){
     setSaving("rating:"+key);setMessage("");
-    try{await saveUserRating({userId:user.id,...(key==="series"?{novelId}:{volumeId}),score:value?Number(value):null});await refreshPersonalData();}
+    try{await saveUserRating({userId:user!.id,...(key==="series"?{novelId}:{volumeId}),score:value?Number(value):null});await refreshPersonalData();}
     catch(error){setMessage(error instanceof Error?error.message:"Could not save your rating.");}
     finally{setSaving("");}
   }
