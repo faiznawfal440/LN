@@ -166,6 +166,7 @@ function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: s
 
 function Home({ setView, catalog, progress, onRead }: { setView: (view: View) => void; catalog: CatalogBook[]; progress: Map<string, number>; onRead: (book: DisplayBook) => void }) {
   return <main className="page home-page">
+    {catalog.length===0&&<div className="demo-catalog-note" role="status"><strong>Preview mode</strong><span>The interface is ready, but the live catalog is empty until Supabase is connected and a rights-cleared novel is published. The sample cards below are illustrative, not downloadable titles.</span></div>}
     <section className="hero">
       <img src={photos.hero} alt="" />
       <div className="hero-overlay"></div>
