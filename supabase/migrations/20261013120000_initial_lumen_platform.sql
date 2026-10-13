@@ -435,13 +435,13 @@ RETURNS TABLE (
 LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
 AS $$
   SELECT cc.id, c.id, c.chapter_number, c.title, v.id, v.volume_number, v.title, n.id, n.slug, n.title,
-         cc.content, cc.metadata, (1 - (cc.embedding <=> query_embedding::extensions.vector))::double precision
+         cc.content, cc.metadata, (1 - (cc.embedding OPERATOR(extensions.<=>) query_embedding::extensions.vector))::double precision
   FROM public.chapter_chunks cc JOIN public.chapters c ON c.id = cc.chapter_id
   JOIN public.volumes v ON v.id = c.volume_id JOIN public.novels n ON n.id = v.novel_id
   WHERE cc.embedding IS NOT NULL AND c.publication_status = 'published' AND v.publication_status = 'published'
     AND n.publication_status = 'published'
-    AND (1 - (cc.embedding <=> query_embedding::extensions.vector)) >= match_threshold
-  ORDER BY cc.embedding <=> query_embedding::extensions.vector
+    AND (1 - (cc.embedding OPERATOR(extensions.<=>) query_embedding::extensions.vector)) >= match_threshold
+  ORDER BY cc.embedding OPERATOR(extensions.<=>) query_embedding::extensions.vector
   LIMIT GREATEST(1, LEAST(match_count, 20));
 $$;
 GRANT EXECUTE ON FUNCTION public.match_lumen_chunks(text, double precision, integer) TO authenticated, service_role;
